@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>ChatGPT Export to Markdown &amp; HTML</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #202124;
+      --muted: #5f6368;
+      --control-bg: #ffffff;
+      --control-border: #c7c7c7;
+      --button-bg: #f6f6f6;
+      --button-hover: #eeeeee;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #202124;
+        --fg: #e8eaed;
+        --muted: #9aa0a6;
+        --control-bg: #292a2d;
+        --control-border: #5f6368;
+        --button-bg: #303134;
+        --button-hover: #3c4043;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font: 14px system-ui, sans-serif;
+      width: 310px;
+      padding: 12px;
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    .title { display: block; margin-bottom: 4px; }
+    input[type="text"] {
+      width: 100%;
+      margin: 6px 0;
+      padding: 7px 8px;
+      color: var(--fg);
+      background: var(--control-bg);
+      border: 1px solid var(--control-border);
+      border-radius: 4px;
+    }
+    label { display: block; margin-top: 7px; font-size: 12px; color: var(--muted); }
+    .names { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .names label { margin-top: 0; }
+    .section-label { margin: 9px 0 3px; font-size: 12px; color: var(--muted); }
+    .formats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0 6px;
+      font-size: 13px;
+      color: var(--fg);
+      cursor: pointer;
+    }
+    .formats .option { margin: 3px 0 5px; }
+    .option input { width: auto; margin: 0; accent-color: currentColor; }
+    .suboption { margin-left: 20px; }
+    .option:has(input:disabled) { opacity: 0.55; cursor: default; }
+    button {
+      width: 100%;
+      margin: 4px 0;
+      padding: 8px;
+      cursor: pointer;
+      color: var(--fg);
+      background: var(--button-bg);
+      border: 1px solid var(--control-border);
+      border-radius: 5px;
+    }
+    button:hover:not(:disabled) { background: var(--button-hover); }
+    button:disabled { opacity: 0.55; cursor: default; }
+    .row { display: flex; gap: 6px; }
+    .row button { width: 50%; }
+    #status { margin-top: 8px; font-size: 12px; white-space: pre-wrap; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <strong class="title" data-i18n="extensionName"></strong>
+  <input id="name" type="text" data-i18n-placeholder="exportNamePlaceholder">
+  <div class="names">
+    <label><span data-i18n="userLabel"></span>
+      <input id="userName" type="text" data-i18n-placeholder="defaultUserName">
+    </label>
+    <label><span data-i18n="assistantLabel"></span>
+      <input id="assistantName" type="text" data-i18n-placeholder="defaultAssistantName">
+    </label>
+  </div>
+  <div class="section-label" data-i18n="formatsLabel"></div>
+  <div class="formats">
+    <label class="option">
+      <input id="exportMarkdown" type="checkbox" checked>
+      <span data-i18n="formatMarkdown"></span>
+    </label>
+    <label class="option">
+      <input id="exportHtml" type="checkbox" checked>
+      <span data-i18n="formatHtml"></span>
+    </label>
+    <label class="option">
+      <input id="exportJson" type="checkbox" checked>
+      <span data-i18n="formatJson"></span>
+    </label>
+  </div>
+  <label class="option">
+    <input id="saveAttachments" type="checkbox" checked>
+    <span data-i18n="saveAttachments"></span>
+  </label>
+  <label class="option suboption">
+    <input id="separateAttachmentsFolder" type="checkbox" checked>
+    <span data-i18n="saveAttachmentsSeparate"></span>
+  </label>
+  <button id="toggle" data-i18n="showSelection"></button>
+  <div class="row">
+    <button id="all" data-i18n="selectAll"></button>
+    <button id="none" data-i18n="selectNone"></button>
+  </div>
+  <button id="export" data-i18n="exportSelected"></button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

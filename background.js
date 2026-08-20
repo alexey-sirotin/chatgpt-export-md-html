@@ -1,0 +1,392 @@
+import {
+  t,
+  safeName,
+  filenameWithExtension,
+  uniqueFilename,
+  isoUtc,
+  extFromMime,
+  enc,
+  markdownHref
+} from "./utils.js";
+import {
+  isVisibleMessage,
+  rawBranchFromCurrent,
+  selectedBranchFromRaw,
+  textParts
+} from "./conversation.js";
+import {
+  attachmentRecords,
+  replaceSandboxLinkDestinations
+} from "./attachments.js";
+import {
+  getConversationInPage,
+  downloadAttachmentInPage
+} from "./chatgpt-api.js";
+import { buildMarkdownExport, buildHtmlExport } from "./render.js";
+import { makeZip } from "./zip.js";
+
+function waitForDownloadCompletion(downloadId) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = (error = null) => {
+      if (settled) return;
+      settled = true;
+      chrome.downloads.onChanged.removeListener(onChanged);
+      error ? reject(error) : resolve();
+    };
+
+    const onChanged = delta => {
+      if (delta.id !== downloadId) return;
+      if (delta.state?.current === "complete") {
+        finish();
+        return;
+      }
+      if (delta.error?.current || delta.state?.current === "interrupted") {
+        finish(new Error(delta.error?.current || "Download interrupted"));
+      }
+    };
+
+    chrome.downloads.onChanged.addListener(onChanged);
+
+    // Close the small race where an extremely small archive completes before
+    // the onChanged listener is attached.
+    chrome.downloads.search({ id: downloadId }).then(items => {
+      const item = items?.[0];
+      if (!item || settled) return;
+      if (item.state === "complete") finish();
+      else if (item.state === "interrupted") finish(new Error(item.error || "Download interrupted"));
+    }).catch(() => {});
+  });
+}
+
+const exportProgressState = new Map();
+
+function exportProgressKey(tabId) {
+  return `exportProgress:${tabId}`;
+}
+
+async function storeExportProgress(tabId, state) {
+  exportProgressState.set(tabId, state);
+  try {
+    await chrome.storage.session.set({ [exportProgressKey(tabId)]: state });
+  } catch (e) {
+    console.warn("chatgpt2md: could not persist export progress", e);
+  }
+}
+
+async function loadExportProgress(tabId) {
+  const memory = exportProgressState.get(tabId);
+  if (memory) return memory;
+  try {
+    const key = exportProgressKey(tabId);
+    const saved = await chrome.storage.session.get(key);
+    return saved[key] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function clearExportProgress(tabId) {
+  exportProgressState.delete(tabId);
+  try {
+    await chrome.storage.session.remove(exportProgressKey(tabId));
+  } catch {}
+}
+
+async function beginExportProgress(tabId, startedAt, exportName) {
+  const state = {
+    active: true,
+    startedAt: Number.isFinite(Number(startedAt)) ? Number(startedAt) : Date.now(),
+    text: t("preparingExport"),
+    exportName: exportName || "",
+    updatedAt: Date.now()
+  };
+  await storeExportProgress(tabId, state);
+  return state;
+}
+
+async function reportExportProgress(tabId, text) {
+  const previous = exportProgressState.get(tabId) || await loadExportProgress(tabId) || {
+    active: true,
+    startedAt: Date.now()
+  };
+  const state = {
+    ...previous,
+    active: true,
+    text,
+    updatedAt: Date.now()
+  };
+  await storeExportProgress(tabId, state);
+  try {
+    await chrome.runtime.sendMessage({
+      type: "EXPORT_PROGRESS",
+      tabId,
+      text,
+      startedAt: state.startedAt
+    });
+  } catch {
+    // The popup may have been closed while export continues. That is fine.
+  }
+}
+
+async function finishExportProgress(tabId, result) {
+  await clearExportProgress(tabId);
+  try {
+    await chrome.runtime.sendMessage({
+      type: "EXPORT_FINISHED",
+      tabId,
+      ...result
+    });
+  } catch {
+    // No popup is open. Nothing else to do.
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg.type !== "GET_EXPORT_STATE") return;
+  loadExportProgress(msg.tabId).then(state => respond(state || { active: false }));
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg.type !== "EXPORT_ACTIVE_TAB") return;
+
+  (async () => {
+    const tabId = msg.tabId;
+    await beginExportProgress(tabId, msg.startedAt, msg.exportName);
+    await reportExportProgress(tabId, t("progressReadingSelection"));
+    const selection = await chrome.tabs.sendMessage(tabId, { type: "GET_SELECTION" });
+    await reportExportProgress(tabId, t("progressLoadingChat"));
+    const data = await getConversationInPage(tabId);
+    const rawBranch = rawBranchFromCurrent(data);
+    let branch = rawBranch.filter(node => isVisibleMessage(node.message));
+
+    if (!selection.selectAll) {
+      const hasSelectedMessages = (selection.selectedMessageIds || []).length > 0;
+      const hasSelectedTurns = (selection.selectedTurnIds || []).length > 0;
+      if (!hasSelectedMessages && !hasSelectedTurns) {
+        throw new Error(t("nothingSelected"));
+      }
+      branch = selectedBranchFromRaw(rawBranch, selection);
+      if (!branch.length) {
+        throw new Error(t("nothingSelected"));
+      }
+    }
+
+    await reportExportProgress(tabId, t("progressPreparingMessages", branch.length));
+
+    const exportName = safeName(msg.exportName || data.title);
+    const conversationTitle = (typeof msg.originalTitle === "string" && msg.originalTitle.trim())
+      ? msg.originalTitle.trim().replace(/[\r\n]+/g, " ")
+      : (typeof data.title === "string" && data.title.trim())
+        ? data.title.trim().replace(/[\r\n]+/g, " ")
+        : exportName;
+    const defaultUserName = t("defaultUserName");
+    const defaultAssistantName = t("defaultAssistantName");
+    const userName = (msg.userName || defaultUserName).trim() || defaultUserName;
+    const assistantName = (msg.assistantName || defaultAssistantName).trim() || defaultAssistantName;
+    const exportMarkdown = msg.exportMarkdown !== false;
+    const exportHtml = msg.exportHtml !== false;
+    const exportJsonEnabled = msg.exportJson !== false;
+    if (!exportMarkdown && !exportHtml && !exportJsonEnabled) throw new Error(t("chooseFormat"));
+    const saveAttachments = msg.saveAttachments !== false;
+    const separateAttachmentsFolder = msg.separateAttachmentsFolder !== false;
+    const folder = saveAttachments && separateAttachmentsFolder ? exportName : "";
+    const mediaFiles = [];
+    const usedMediaNames = new Set();
+    const jsonMessages = [];
+
+    const totalAttachments = saveAttachments
+      ? branch.reduce(
+          (sum, node) => sum + attachmentRecords(node.message, data.safe_urls || []).length,
+          0
+        )
+      : 0;
+    let downloadedAttachments = 0;
+    let idx = 0;
+    for (const node of branch) {
+      idx++;
+      if (idx === 1 || idx === branch.length || idx % 10 === 0) {
+        await reportExportProgress(tabId, t("progressProcessingMessages", [idx, branch.length]));
+      }
+      const msgObj = node.message;
+      const sourceRole = msgObj.author?.role || "unknown";
+      const role = sourceRole === "tool" ? "assistant" : sourceRole;
+      const rawTexts = textParts(msgObj);
+      const attachments = attachmentRecords(msgObj, data.safe_urls || []);
+
+      if (!rawTexts.length && !attachments.length) {
+        idx--;
+        continue;
+      }
+
+      const jsonAtt = [];
+      const sandboxHrefReplacements = new Map();
+
+      let aidx = 0;
+      for (const a of attachments) {
+        aidx++;
+
+        let resolvedOriginalName = a.originalName || a.title || null;
+        let resolvedMimeType = a.mimeType || "application/octet-stream";
+        let resolvedFileId = a.id || null;
+        let resolvedLibraryFileId = a.libraryFileId || null;
+        let media = null;
+        let downloadError = null;
+
+        const downloadRecord = a.source === "sandbox"
+          ? { ...a, conversationId: data.conversation_id, messageId: msgObj.id }
+          : a;
+
+        if (saveAttachments) {
+          if (!a.id && a.source !== "sandbox") {
+            downloadError = "attachment.id is missing";
+          } else {
+            try {
+              await reportExportProgress(
+                tabId,
+                t("progressDownloadingMedia", [downloadedAttachments + 1, totalAttachments])
+              );
+              media = await downloadAttachmentInPage(tabId, downloadRecord);
+              resolvedOriginalName = resolvedOriginalName || media.originalName || null;
+              resolvedMimeType = media.type || a.mimeType || "application/octet-stream";
+              resolvedFileId = resolvedFileId || media.fileId || null;
+              resolvedLibraryFileId = resolvedLibraryFileId || media.libraryFileId || null;
+            } catch (e) {
+              downloadError = String(e);
+            }
+          }
+        } else if (a.id && !resolvedOriginalName) {
+          try {
+            const info = await downloadAttachmentInPage(tabId, downloadRecord, true);
+            resolvedOriginalName = info.originalName || resolvedOriginalName;
+            if (!a.mimeType && info.type) resolvedMimeType = info.type;
+            resolvedFileId = resolvedFileId || info.fileId || null;
+            resolvedLibraryFileId = resolvedLibraryFileId || info.libraryFileId || null;
+          } catch (e) {
+            console.warn("chatgpt2md: could not resolve attachment metadata", a.id, e);
+          }
+        }
+
+        const ext = extFromMime(resolvedMimeType, resolvedOriginalName || "");
+        const fallbackName = `${String(idx).padStart(4,"0")}-${role}-${String(aidx).padStart(2,"0")}.${ext}`;
+        const preferredName = filenameWithExtension(resolvedOriginalName, ext);
+        const localName = uniqueFilename(preferredName, fallbackName, usedMediaNames);
+        const localPath = saveAttachments && folder ? `${folder}/${localName}` : localName;
+        const href = markdownHref(localPath);
+
+        if (a.source === "sandbox" && a.sandboxUrl) {
+          sandboxHrefReplacements.set(a.sandboxUrl, href);
+        }
+
+        if (saveAttachments && media?.bytes) {
+          mediaFiles.push({ name: localPath, bytes: media.bytes });
+        }
+
+        jsonAtt.push({
+          ...a,
+          ...(resolvedFileId ? { id: resolvedFileId } : {}),
+          ...(resolvedLibraryFileId ? { libraryFileId: resolvedLibraryFileId } : {}),
+          ...(resolvedOriginalName ? { originalName: resolvedOriginalName } : {}),
+          localName,
+          localPath,
+          mimeType: resolvedMimeType || a.mimeType,
+          ...(downloadError ? { error: downloadError } : {})
+        });
+
+        if (saveAttachments) downloadedAttachments++;
+      }
+
+      const texts = rawTexts.map(text => replaceSandboxLinkDestinations(text, sandboxHrefReplacements));
+      jsonMessages.push({
+        id: msgObj.id,
+        parentId: node.parent,
+        role,
+        sourceRole,
+        authorName: role === "user" ? userName : assistantName,
+        createdAt: isoUtc(msgObj.create_time),
+        model: msgObj.metadata?.model_slug || msgObj.metadata?.resolved_model_slug || null,
+        content: texts.map(text => ({ type: "text", text, format: "markdown" })),
+        attachments: jsonAtt
+      });
+    }
+
+    const exportJson = {
+      schemaVersion: 1,
+      exporter: "chatgpt2md",
+      exporterVersion: "0.1.30",
+      title: exportName,
+      conversationId: data.conversation_id,
+      conversationUrl: `https://chatgpt.com/c/${data.conversation_id}`,
+      exportedAt: new Date().toISOString(),
+      userName,
+      assistantName,
+      messages: jsonMessages
+    };
+
+    await reportExportProgress(tabId, t("progressBuildingFiles"));
+    const conversationUrl = `https://chatgpt.com/c/${data.conversation_id}`;
+    const files = [];
+    if (exportMarkdown) {
+      const markdown = buildMarkdownExport({
+        title: conversationTitle,
+        conversationUrl,
+        messages: jsonMessages
+      });
+      files.push({ name: `${exportName}.md`, bytes: enc(markdown) });
+    }
+    if (exportHtml) {
+      const html = buildHtmlExport({
+        title: conversationTitle,
+        conversationUrl,
+        messages: jsonMessages
+      });
+      files.push({ name: `${exportName}.html`, bytes: enc(html) });
+    }
+    if (exportJsonEnabled) {
+      files.push({ name: `${exportName}.json`, bytes: enc(JSON.stringify(exportJson, null, 2)) });
+    }
+    files.push(...mediaFiles);
+    await reportExportProgress(tabId, t("progressPackingZip"));
+    const zip = makeZip(files);
+    const filename = `${exportName}.zip`;
+
+    // MV3 service workers do not provide URL.createObjectURL().
+    // For the prototype use a data URL. This is fine for modest exports;
+    // later we will move large archives to an offscreen document.
+    await reportExportProgress(tabId, t("progressPreparingDownload"));
+    let binary = "";
+    const chunk = 0x4000;
+    for (let i = 0; i < zip.length; i += chunk) {
+      binary += String.fromCharCode(...zip.subarray(i, i + chunk));
+    }
+    const url = `data:application/zip;base64,${btoa(binary)}`;
+
+    await reportExportProgress(tabId, t("progressSendingBrowser"));
+    const downloadId = await chrome.downloads.download({ url, filename, saveAs: true });
+    await reportExportProgress(tabId, t("progressWaitingDownload"));
+    await waitForDownloadCompletion(downloadId);
+
+    // A successful export ends the temporary message-selection session. Do the
+    // reset from the background worker so it still happens if the popup closes
+    // while the browser's Save As dialog is open.
+    let selectionState = null;
+    try {
+      selectionState = await chrome.tabs.sendMessage(tabId, { type: "RESET_AFTER_EXPORT" });
+    } catch (e) {
+      console.warn("chatgpt2md: could not reset selection UI after export", e);
+    }
+
+    return { ok: true, filename, selectionState };
+  })().then(async result => {
+    await finishExportProgress(msg.tabId, { ok: true, filename: result.filename });
+    respond(result);
+  }).catch(async e => {
+    const error = e.message || String(e);
+    await finishExportProgress(msg.tabId, { ok: false, error });
+    respond({ ok: false, error });
+  });
+
+  return true;
+});

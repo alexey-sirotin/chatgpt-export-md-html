@@ -1,0 +1,21 @@
+# Packaged extension archives
+*.zip
+*.crx
+
+# Signing/private keys
+*.pem
+
+# Local build/output directories
+dist/
+build/
+
+# Editor/IDE files
+.vscode/
+.idea/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

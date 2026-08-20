@@ -1,0 +1,191 @@
+{
+  "extensionName": {
+    "message": "ChatGPT Export to Markdown & HTML"
+  },
+  "extensionDescription": {
+    "message": "Export the current ChatGPT branch to Markdown + HTML + JSON with local attachments."
+  },
+  "exportNamePlaceholder": {
+    "message": "Export name"
+  },
+  "userLabel": {
+    "message": "User"
+  },
+  "assistantLabel": {
+    "message": "Assistant"
+  },
+  "defaultUserName": {
+    "message": "User"
+  },
+  "defaultAssistantName": {
+    "message": "Assistant"
+  },
+  "saveAttachments": {
+    "message": "Save attachments"
+  },
+  "saveAttachmentsSeparate": {
+    "message": "Save attachments in a separate folder"
+  },
+  "showSelection": {
+    "message": "Select messages"
+  },
+  "hideSelection": {
+    "message": "Hide selection"
+  },
+  "selectAll": {
+    "message": "All"
+  },
+  "selectNone": {
+    "message": "Clear"
+  },
+  "exportSelected": {
+    "message": "Export selected"
+  },
+  "selectMessageForExport": {
+    "message": "Select message for export"
+  },
+  "selectedCount": {
+    "message": "Selected: $SELECTED$ of $TOTAL$",
+    "placeholders": {
+      "selected": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "openChatHint": {
+    "message": "Open a chat on chatgpt.com and refresh the page."
+  },
+  "nothingSelected": {
+    "message": "Nothing is selected. Select messages or click “All”."
+  },
+  "done": {
+    "message": "Done: $FILENAME$",
+    "placeholders": {
+      "filename": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorPrefix": {
+    "message": "Error: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "exporting": {
+    "message": "Exporting…"
+  },
+  "preparingExport": {
+    "message": "Preparing export…"
+  },
+  "workingOk": {
+    "message": "Working, everything is fine · $SECONDS$ s",
+    "placeholders": {
+      "seconds": {
+        "content": "$1"
+      }
+    }
+  },
+  "progressReadingSelection": {
+    "message": "Reading selection state…"
+  },
+  "progressLoadingChat": {
+    "message": "Loading chat data…"
+  },
+  "progressPreparingMessages": {
+    "message": "Preparing $COUNT$ messages…",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "progressProcessingMessages": {
+    "message": "Processing messages: $CURRENT$/$TOTAL$…",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "progressDownloadingMedia": {
+    "message": "Downloading media: $CURRENT$/$TOTAL$…",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "progressBuildingFiles": {
+    "message": "Building export files…"
+  },
+  "progressPackingZip": {
+    "message": "Packing ZIP…"
+  },
+  "progressPreparingDownload": {
+    "message": "Preparing archive for download…"
+  },
+  "progressSendingBrowser": {
+    "message": "Sending archive to the browser…"
+  },
+  "errorConversationId": {
+    "message": "conversation_id was not found in the URL"
+  },
+  "errorAccessToken": {
+    "message": "accessToken was not found"
+  },
+  "errorAttachmentId": {
+    "message": "attachment.id is missing"
+  },
+  "errorDownloadUrl": {
+    "message": "download_url was not found for $FILE_ID$",
+    "placeholders": {
+      "file_id": {
+        "content": "$1"
+      }
+    }
+  },
+  "htmlOriginalLabel": {
+    "message": "Original"
+  },
+  "htmlAttachment": {
+    "message": "Attachment"
+  },
+  "htmlAttachmentFailed": {
+    "message": "Failed to download attachment $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "formatsLabel": {
+    "message": "Formats"
+  },
+  "formatMarkdown": {
+    "message": "Markdown"
+  },
+  "formatHtml": {
+    "message": "HTML"
+  },
+  "chooseFormat": {
+    "message": "Select at least one format."
+  },
+  "progressWaitingDownload": {
+    "message": "Waiting for the archive download to finish…"
+  },
+  "formatJson": {
+    "message": "JSON"
+  }
+}

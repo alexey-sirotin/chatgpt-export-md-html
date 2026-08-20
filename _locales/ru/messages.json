@@ -1,0 +1,191 @@
+{
+  "extensionName": {
+    "message": "ChatGPT Export to Markdown & HTML"
+  },
+  "extensionDescription": {
+    "message": "Экспорт текущей ветки ChatGPT в Markdown + HTML + JSON с локальными вложениями."
+  },
+  "exportNamePlaceholder": {
+    "message": "Имя экспорта"
+  },
+  "userLabel": {
+    "message": "Пользователь"
+  },
+  "assistantLabel": {
+    "message": "Ассистент"
+  },
+  "defaultUserName": {
+    "message": "Пользователь"
+  },
+  "defaultAssistantName": {
+    "message": "Ассистент"
+  },
+  "saveAttachments": {
+    "message": "Сохранять вложения"
+  },
+  "saveAttachmentsSeparate": {
+    "message": "Сохранять вложения в отдельной папке"
+  },
+  "showSelection": {
+    "message": "Выбрать сообщения"
+  },
+  "hideSelection": {
+    "message": "Скрыть выбор"
+  },
+  "selectAll": {
+    "message": "Все"
+  },
+  "selectNone": {
+    "message": "Снять"
+  },
+  "exportSelected": {
+    "message": "Экспорт выбранного"
+  },
+  "selectMessageForExport": {
+    "message": "Выбрать сообщение для экспорта"
+  },
+  "selectedCount": {
+    "message": "Выбрано: $SELECTED$ из $TOTAL$",
+    "placeholders": {
+      "selected": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "openChatHint": {
+    "message": "Откройте чат на chatgpt.com и обновите страницу."
+  },
+  "nothingSelected": {
+    "message": "Ничего не выбрано. Отметьте сообщения или нажмите «Все»."
+  },
+  "done": {
+    "message": "Готово: $FILENAME$",
+    "placeholders": {
+      "filename": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorPrefix": {
+    "message": "Ошибка: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "exporting": {
+    "message": "Экспорт…"
+  },
+  "preparingExport": {
+    "message": "Подготавливаю экспорт…"
+  },
+  "workingOk": {
+    "message": "Работаю, всё в порядке · $SECONDS$ с",
+    "placeholders": {
+      "seconds": {
+        "content": "$1"
+      }
+    }
+  },
+  "progressReadingSelection": {
+    "message": "Читаю состояние выбора…"
+  },
+  "progressLoadingChat": {
+    "message": "Загружаю данные чата…"
+  },
+  "progressPreparingMessages": {
+    "message": "Подготавливаю $COUNT$ сообщений…",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "progressProcessingMessages": {
+    "message": "Обрабатываю сообщения: $CURRENT$/$TOTAL$…",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "progressDownloadingMedia": {
+    "message": "Скачиваю медиа: $CURRENT$/$TOTAL$…",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "progressBuildingFiles": {
+    "message": "Собираю файлы экспорта…"
+  },
+  "progressPackingZip": {
+    "message": "Упаковываю ZIP…"
+  },
+  "progressPreparingDownload": {
+    "message": "Готовлю архив к загрузке…"
+  },
+  "progressSendingBrowser": {
+    "message": "Передаю архив браузеру…"
+  },
+  "errorConversationId": {
+    "message": "conversation_id не найден в URL"
+  },
+  "errorAccessToken": {
+    "message": "accessToken не найден"
+  },
+  "errorAttachmentId": {
+    "message": "attachment.id отсутствует"
+  },
+  "errorDownloadUrl": {
+    "message": "download_url не найден для $FILE_ID$",
+    "placeholders": {
+      "file_id": {
+        "content": "$1"
+      }
+    }
+  },
+  "htmlOriginalLabel": {
+    "message": "Оригинал"
+  },
+  "htmlAttachment": {
+    "message": "Вложение"
+  },
+  "htmlAttachmentFailed": {
+    "message": "Не удалось скачать вложение $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "formatsLabel": {
+    "message": "Форматы"
+  },
+  "formatMarkdown": {
+    "message": "Markdown"
+  },
+  "formatHtml": {
+    "message": "HTML"
+  },
+  "chooseFormat": {
+    "message": "Выберите хотя бы один формат."
+  },
+  "progressWaitingDownload": {
+    "message": "Жду завершения загрузки архива…"
+  },
+  "formatJson": {
+    "message": "JSON"
+  }
+}
