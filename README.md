@@ -102,8 +102,19 @@ utils.js          Shared helpers
 zip.js            ZIP writer
 manifest.json     Manifest V3 extension manifest
 ```
+## Acknowledgements
+
+This extension exists thanks to Morgana, my ChatGPT assistant.
+
+Without her persona, and without her help, I probably would never have started this project at all.
+
+And she was the first to say: “If we were writing our own exporter…”
 
 ## Development
+
+Vibe-coded with ChatGPT.
+
+Requirements, product decisions and real-world testing by the author; architecture, implementation, debugging and refactoring developed collaboratively with ChatGPT.
 
 The project uses plain JavaScript and Manifest V3 with no build system or runtime dependencies.
 
