@@ -289,7 +289,7 @@ export function buildMarkdownExport({ title, conversationUrl, messages }) {
     const attachments = message.attachments || [];
     if (!texts.length && !attachments.length) continue;
 
-    md.push(`### \\[${localTimeIso(message.createdAt)}\\] ${message.authorName || message.role || ""}`, "");
+    md.push(`### \[${localTimeIso(message.createdAt)}\] ${message.authorName || message.role || ""}`, "");
     if (texts.length) md.push(texts.join("\n\n"), "");
 
     for (const a of attachments) {
