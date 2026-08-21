@@ -2,6 +2,8 @@
   const t = (key) => chrome.i18n.getMessage(key) || key;
   const selectedTurnIds = new Set();
   const selectedMessageIds = new Set();
+  const excludedTurnIds = new Set();
+  const excludedMessageIds = new Set();
   let enabled = false;
   let anchorTurnId = null;
   let observer = null;
@@ -133,21 +135,40 @@
       turn.root;
   }
 
-  function syncMessageId(turn, checked) {
-    const mid = turn.messageId ||
+  function turnMessageId(turn) {
+    return turn.messageId ||
       selfOrDescendantWithMessageId(turn.root)?.getAttribute('data-message-id') ||
-      selfOrDescendantWithMessageId(turn.container)?.getAttribute('data-message-id');
-    if (!mid) return;
-    checked ? selectedMessageIds.add(mid) : selectedMessageIds.delete(mid);
+      selfOrDescendantWithMessageId(turn.container)?.getAttribute('data-message-id') ||
+      null;
   }
 
-  function materializeSelectAllState() {
-    if (!selectAllMode) return;
-    selectedTurnIds.clear();
-    selectedMessageIds.clear();
-    for (const id of orderedTurnIds()) selectedTurnIds.add(id);
-    for (const turn of populatedTurns()) syncMessageId(turn, true);
-    selectAllMode = false;
+  function isTurnSelected(turn) {
+    const mid = turnMessageId(turn);
+    if (selectAllMode) {
+      return !excludedTurnIds.has(turn.turnId) && !(mid && excludedMessageIds.has(mid));
+    }
+    return selectedTurnIds.has(turn.turnId) || !!(mid && selectedMessageIds.has(mid));
+  }
+
+  function setTurnIdSelected(turnId, checked) {
+    if (!turnId) return;
+    if (selectAllMode) {
+      checked ? excludedTurnIds.delete(turnId) : excludedTurnIds.add(turnId);
+    } else {
+      checked ? selectedTurnIds.add(turnId) : selectedTurnIds.delete(turnId);
+    }
+  }
+
+  function setTurnSelected(turn, checked) {
+    setTurnIdSelected(turn.turnId, checked);
+    const mid = turnMessageId(turn);
+    if (!mid) return;
+
+    if (selectAllMode) {
+      checked ? excludedMessageIds.delete(mid) : excludedMessageIds.add(mid);
+    } else {
+      checked ? selectedMessageIds.add(mid) : selectedMessageIds.delete(mid);
+    }
   }
 
   function addCheckbox(turn) {
@@ -160,7 +181,7 @@
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.className = 'chatgpt2md-select';
-    box.checked = selectAllMode || selectedTurnIds.has(turnId);
+    box.checked = isTurnSelected(turn);
     const selectionLabel = t('selectMessageForExport');
     box.title = selectionLabel;
     box.setAttribute('aria-label', selectionLabel);
@@ -186,11 +207,9 @@
     box.addEventListener('click', (ev) => {
       ev.stopPropagation();
 
-      // The default state means "everything selected" without materializing all
-      // IDs. On the first manual change snapshot that state so unchecking one
-      // turn really means "all except this one".
-      materializeSelectAllState();
-
+      // Keep "All" as an implicit default plus explicit exclusions. ChatGPT can
+      // virtualize most of the conversation out of the DOM, so snapshotting only
+      // currently known IDs would silently drop messages that have not mounted.
       const ids = orderedTurnIds();
 
       if (ev.shiftKey && anchorTurnId && ids.includes(anchorTurnId) && ids.includes(turnId)) {
@@ -200,16 +219,13 @@
         const range = new Set(ids.slice(lo, hi + 1));
         const value = box.checked;
 
-        for (const id of range) {
-          value ? selectedTurnIds.add(id) : selectedTurnIds.delete(id);
-        }
+        for (const id of range) setTurnIdSelected(id, value);
         for (const mounted of populatedTurns()) {
-          if (range.has(mounted.turnId)) syncMessageId(mounted, value);
+          if (range.has(mounted.turnId)) setTurnSelected(mounted, value);
         }
         refreshMounted();
       } else {
-        box.checked ? selectedTurnIds.add(turnId) : selectedTurnIds.delete(turnId);
-        syncMessageId(turn, box.checked);
+        setTurnSelected(turn, box.checked);
       }
 
       anchorTurnId = turnId;
@@ -221,22 +237,21 @@
   function refreshMounted() {
     const turns = populatedTurns();
     for (const turn of turns) {
-      const { turnId } = turn;
-
       if (enabled) addCheckbox(turn);
 
       const host = checkboxHost(turn);
       const box = turn.container.querySelector?.('.chatgpt2md-select') ||
         host?.querySelector(':scope > .chatgpt2md-select');
-      const checked = selectAllMode || selectedTurnIds.has(turnId);
+      const checked = isTurnSelected(turn);
       if (box) {
         box.checked = checked;
         box.style.display = enabled ? 'block' : 'none';
       }
 
-      // Rebuild message-ID knowledge whenever a virtualized turn mounts again.
-      if (checked) syncMessageId(turn, true);
-      else syncMessageId(turn, false);
+      // Whenever a virtualized turn mounts, mirror its current state to both the
+      // turn ID and message ID. This gives the background worker the strongest
+      // available identity without changing the default state of unseen turns.
+      setTurnSelected(turn, checked);
     }
   }
 
@@ -267,9 +282,12 @@
 
   function currentState() {
     const ids = orderedTurnIds();
+    const selected = ids.filter(id =>
+      selectAllMode ? !excludedTurnIds.has(id) : selectedTurnIds.has(id)
+    ).length;
     return {
       total: ids.length,
-      selected: selectAllMode ? ids.length : selectedTurnIds.size,
+      selected,
       enabled
     };
   }
@@ -297,6 +315,8 @@
       selectAllMode = true;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
+      excludedTurnIds.clear();
+      excludedMessageIds.clear();
       anchorTurnId = null;
       refreshMounted();
       respond(currentState());
@@ -307,6 +327,8 @@
       selectAllMode = false;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
+      excludedTurnIds.clear();
+      excludedMessageIds.clear();
       anchorTurnId = null;
       refreshMounted();
       respond(currentState());
@@ -319,6 +341,8 @@
         selectAll: selectAllMode,
         selectedTurnIds: [...selectedTurnIds],
         selectedMessageIds: [...selectedMessageIds],
+        excludedTurnIds: [...excludedTurnIds],
+        excludedMessageIds: [...excludedMessageIds],
         orderedIds: orderedTurnIds()
       });
       return;
@@ -329,6 +353,8 @@
       selectAllMode = true;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
+      excludedTurnIds.clear();
+      excludedMessageIds.clear();
       anchorTurnId = null;
       enabled = false;
       refreshMounted();
