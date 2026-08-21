@@ -38,7 +38,8 @@
         "https://chatgpt.com/*"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "selection-cache-observer.js"
       ],
       "run_at": "document_idle"
     }

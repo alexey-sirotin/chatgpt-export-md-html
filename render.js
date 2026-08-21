@@ -273,21 +273,34 @@ function localTimeIso(iso) {
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function visibleExportMessages(messages) {
+  return messages.filter(message => {
+    const hasText = (message.content || []).some(
+      part => part?.type === "text" && typeof part.text === "string" && part.text.trim() !== ""
+    );
+    const hasAttachment = (message.attachments || []).length > 0;
+    return hasText || hasAttachment;
+  });
+}
 
-export function buildMarkdownExport({ title, conversationUrl, messages }) {
-  const md = [
-    `# ${title}`,
-    "",
-    `${t("htmlOriginalLabel")}: ${conversationUrl}`,
-    ""
-  ];
+export function buildMarkdownExport({ title, conversationUrl, messages, includeOriginalLink = true }) {
+  const md = [`# ${title}`, ""];
+  if (includeOriginalLink && conversationUrl) {
+    md.push(`${t("htmlOriginalLabel")}: ${conversationUrl}`, "");
+  }
 
-  for (const message of messages) {
+  const visibleMessages = visibleExportMessages(messages);
+  for (let index = 0; index < visibleMessages.length; index++) {
+    const message = visibleMessages[index];
     const texts = (message.content || [])
       .filter(part => part?.type === "text" && typeof part.text === "string")
       .map(part => part.text);
     const attachments = message.attachments || [];
-    if (!texts.length && !attachments.length) continue;
+
+    if (message.omittedBefore) {
+      const markerKey = index === 0 ? "omittedStartMarker" : "omittedMessagesMarker";
+      md.push(`*${t(markerKey)}*`, "");
+    }
 
     md.push(`### \[${localTimeIso(message.createdAt)}\] ${message.authorName || message.role || ""}`, "");
     if (texts.length) md.push(texts.join("\n\n"), "");
@@ -309,19 +322,18 @@ export function buildMarkdownExport({ title, conversationUrl, messages }) {
     }
   }
 
+  const lastMessage = visibleMessages[visibleMessages.length - 1];
+  if (lastMessage?.omittedAfter) {
+    md.push(`*${t("omittedEndMarker")}*`, "");
+  }
+
   return md.join("\n");
 }
 
-export function buildHtmlExport({ title, conversationUrl, messages }) {
-  const visibleMessages = messages.filter(message => {
-    const hasText = (message.content || []).some(
-      part => part?.type === "text" && typeof part.text === "string" && part.text.trim() !== ""
-    );
-    const hasAttachment = (message.attachments || []).length > 0;
-    return hasText || hasAttachment;
-  });
+export function buildHtmlExport({ title, conversationUrl, messages, includeOriginalLink = true }) {
+  const visibleMessages = visibleExportMessages(messages);
 
-  const htmlMessages = visibleMessages.map(message => {
+  const htmlMessages = visibleMessages.map((message, index) => {
     const author = escapeHtml(message.authorName || message.role || "");
     const createdAt = escapeHtml(message.createdAt || "");
     const displayTime = escapeHtml(localTimeIso(message.createdAt));
@@ -348,15 +360,28 @@ export function buildHtmlExport({ title, conversationUrl, messages }) {
       return `<p class="attachment"><a href="${href}">${label}</a></p>`;
     }).join("\n");
 
-    return `<article class="message ${message.role === "user" ? "user" : "assistant"}">
+    let omission = "";
+    if (message.omittedBefore) {
+      const markerKey = index === 0 ? "omittedStartMarker" : "omittedMessagesMarker";
+      omission = `<p class="omitted-marker"><em>${escapeHtml(t(markerKey))}</em></p>\n`;
+    }
+
+    return `${omission}<article class="message ${message.role === "user" ? "user" : "assistant"}">
   <header><strong>${author}</strong><time datetime="${createdAt}">${displayTime}</time></header>
   <div class="content">${body}${attachments}</div>
 </article>`;
   }).join("\n");
 
+  const lastMessage = visibleMessages[visibleMessages.length - 1];
+  const endOmission = lastMessage?.omittedAfter
+    ? `<p class="omitted-marker"><em>${escapeHtml(t("omittedEndMarker"))}</em></p>`
+    : "";
+
   const lang = (chrome.i18n.getUILanguage() || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
   const escapedTitle = escapeHtml(title);
-  const escapedUrl = escapeHtml(conversationUrl);
+  const originalLink = includeOriginalLink && conversationUrl
+    ? `\n    <p>${escapeHtml(t("htmlOriginalLabel"))}: <a href="${escapeHtml(conversationUrl)}">${escapeHtml(conversationUrl)}</a></p>`
+    : "";
 
   return `<!doctype html>
 <html lang="${lang}">
@@ -396,6 +421,7 @@ export function buildHtmlExport({ title, conversationUrl, messages }) {
   figure img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
   figcaption { margin-top: 5px; font-size: 0.8em; opacity: 0.65; }
   .attachment-error { opacity: 0.7; }
+  .omitted-marker { margin: 16px 0; text-align: center; opacity: 0.65; }
   @media print {
     :root { color-scheme: light; }
     body { background: white; color: black; }
@@ -411,10 +437,9 @@ export function buildHtmlExport({ title, conversationUrl, messages }) {
 <body>
 <main>
   <header class="document-header">
-    <h1>${escapedTitle}</h1>
-    <p>${escapeHtml(t("htmlOriginalLabel"))}: <a href="${escapedUrl}">${escapedUrl}</a></p>
+    <h1>${escapedTitle}</h1>${originalLink}
   </header>
-${htmlMessages}
+${htmlMessages}${endOmission ? `\n${endOmission}` : ""}
 </main>
 </body>
 </html>`;
