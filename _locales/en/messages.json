@@ -55,6 +55,9 @@
       }
     }
   },
+  "loadingMessageList": {
+    "message": "Loading message list…"
+  },
   "openChatHint": {
     "message": "Open a chat on chatgpt.com and refresh the page."
   },

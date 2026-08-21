@@ -153,6 +153,33 @@ export function selectedBranchFromRaw(rawBranch, selection) {
   return out;
 }
 
+export function branchExcludingFromRaw(rawBranch, selection) {
+  const excludedBranch = selectedBranchFromRaw(rawBranch, {
+    selectedMessageIds: selection.excludedMessageIds || [],
+    selectedTurnIds: selection.excludedTurnIds || []
+  });
+  const excludedNodes = new Set(excludedBranch);
+  return rawBranch.filter(node =>
+    isVisibleMessage(node.message) && !excludedNodes.has(node)
+  );
+}
+
+export function selectionSummaryFromRaw(rawBranch, selection) {
+  const groups = logicalSelectionGroups(rawBranch).filter(group =>
+    group.nodes.some(node => isVisibleMessage(node.message))
+  );
+
+  const selectedBranch = selection.selectAll
+    ? branchExcludingFromRaw(rawBranch, selection)
+    : selectedBranchFromRaw(rawBranch, selection);
+  const selectedNodes = new Set(selectedBranch);
+  const selected = groups.filter(group =>
+    group.nodes.some(node => selectedNodes.has(node))
+  ).length;
+
+  return { total: groups.length, selected };
+}
+
 export function isInternalToolInvocationText(text) {
   if (typeof text !== "string") return false;
   const trimmed = text.trim();
@@ -329,4 +356,3 @@ export function textParts(msg) {
 
   return out;
 }
-
