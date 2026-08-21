@@ -10,12 +10,21 @@ export async function getConversationInPage(tabId) {
       if (!m) throw new Error(errorConversationId);
       const conversationId = m[0];
 
-      const sessionRes = await fetch("/api/auth/session");
-      const session = await sessionRes.json();
-      if (!session.accessToken) throw new Error(errorAccessToken);
+      const sessionCacheKey = "__chatgpt2mdSessionCache";
+      const cachedSession = globalThis[sessionCacheKey];
+      let accessToken = cachedSession?.accessToken || null;
+      if (!accessToken || Date.now() - Number(cachedSession?.updatedAt || 0) > 5 * 60 * 1000) {
+        const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
+        const session = await sessionRes.json();
+        accessToken = session.accessToken || null;
+        if (accessToken) {
+          globalThis[sessionCacheKey] = { accessToken, updatedAt: Date.now() };
+        }
+      }
+      if (!accessToken) throw new Error(errorAccessToken);
 
       const res = await fetch(`/backend-api/conversation/${conversationId}`, {
-        headers: { Authorization: `Bearer ${session.accessToken}` }
+        headers: { Authorization: `Bearer ${accessToken}` }
       });
       if (!res.ok) throw new Error(`conversation GET: ${res.status}`);
       return await res.json();
@@ -35,10 +44,19 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
       t("errorDownloadUrl", attachment?.id || attachment?.sandboxPath || "")
     ],
     func: async (attachment, metadataOnly, errorAttachmentId, errorDownloadUrl) => {
-      const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
-      const session = await sessionRes.json();
-      const headers = session.accessToken
-        ? { Authorization: `Bearer ${session.accessToken}` }
+      const sessionCacheKey = "__chatgpt2mdSessionCache";
+      const cachedSession = globalThis[sessionCacheKey];
+      let accessToken = cachedSession?.accessToken || null;
+      if (!accessToken || Date.now() - Number(cachedSession?.updatedAt || 0) > 5 * 60 * 1000) {
+        const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
+        const session = await sessionRes.json();
+        accessToken = session.accessToken || null;
+        if (accessToken) {
+          globalThis[sessionCacheKey] = { accessToken, updatedAt: Date.now() };
+        }
+      }
+      const headers = accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
         : {};
 
       const cleanName = value => {
