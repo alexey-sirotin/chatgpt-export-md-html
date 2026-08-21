@@ -8,6 +8,8 @@ const t = (key, substitutions) => {
 
 let tabId;
 let totalMessages = 0;
+let selectedMessages = 0;
+let hasAuthoritativeSelectionState = false;
 let originalConversationTitle = "";
 
 async function send(type, payload = {}) {
@@ -151,6 +153,29 @@ function selectionStatus(selected, total = totalMessages) {
   return t("selectedCount", [selected, total]);
 }
 
+function applyLocalSelectionState(state) {
+  if (!state || hasAuthoritativeSelectionState) return;
+  if (Number.isFinite(state.total)) totalMessages = state.total;
+  if (Number.isFinite(state.selected)) selectedMessages = state.selected;
+}
+
+async function refreshAuthoritativeSelectionState() {
+  try {
+    const summary = await chrome.runtime.sendMessage({
+      type: "GET_SELECTION_SUMMARY",
+      tabId
+    });
+    if (!Number.isFinite(summary?.total) || !Number.isFinite(summary?.selected)) return false;
+    totalMessages = summary.total;
+    selectedMessages = summary.selected;
+    hasAuthoritativeSelectionState = true;
+    $("status").textContent = selectionStatus(selectedMessages, totalMessages);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function init() {
   localizeStaticUi();
   await Promise.all([loadNames(), loadOptions()]);
@@ -159,15 +184,20 @@ async function init() {
     const info = await send("GET_INFO");
     originalConversationTitle = info.title || "";
     $("name").value = originalConversationTitle || "ChatGPT export";
-    totalMessages = info.total;
-    $("status").textContent = selectionStatus(info.selected, info.total);
+    applyLocalSelectionState(info);
+    $("status").textContent = selectionStatus(selectedMessages, totalMessages);
     $("toggle").textContent = t(info.enabled ? "hideSelection" : "showSelection");
 
     const progressState = await chrome.runtime.sendMessage({
       type: "GET_EXPORT_STATE",
       tabId
     });
-    restoreProgress(progressState);
+    if (restoreProgress(progressState)) return;
+
+    // ChatGPT now virtualizes the conversation aggressively, so the content
+    // script may see only a small mounted window. Ask the background worker to
+    // count logical messages from the full conversation mapping instead.
+    await refreshAuthoritativeSelectionState();
   } catch (e) {
     $("status").textContent = t("openChatHint");
   }
@@ -175,21 +205,29 @@ async function init() {
 
 $("toggle").onclick = async () => {
   const r = await send("TOGGLE_SELECTION_UI");
-  if (Number.isFinite(r.total)) totalMessages = r.total;
+  applyLocalSelectionState(r);
   $("toggle").textContent = t(r.enabled ? "hideSelection" : "showSelection");
-  $("status").textContent = selectionStatus(r.selected, r.total ?? totalMessages);
+  $("status").textContent = selectionStatus(selectedMessages, totalMessages);
 };
 
 $("all").onclick = async () => {
   const r = await send("SELECT_ALL");
-  if (Number.isFinite(r.total)) totalMessages = r.total;
-  $("status").textContent = selectionStatus(r.selected, r.total ?? totalMessages);
+  if (hasAuthoritativeSelectionState) {
+    selectedMessages = totalMessages;
+  } else {
+    applyLocalSelectionState(r);
+  }
+  $("status").textContent = selectionStatus(selectedMessages, totalMessages);
 };
 
 $("none").onclick = async () => {
   const r = await send("SELECT_NONE");
-  if (Number.isFinite(r.total)) totalMessages = r.total;
-  $("status").textContent = selectionStatus(r.selected, r.total ?? totalMessages);
+  if (hasAuthoritativeSelectionState) {
+    selectedMessages = 0;
+  } else {
+    applyLocalSelectionState(r);
+  }
+  $("status").textContent = selectionStatus(selectedMessages, totalMessages);
 };
 
 $("export").onclick = async () => {
