@@ -185,7 +185,7 @@ async function init() {
     originalConversationTitle = info.title || "";
     $("name").value = originalConversationTitle || "ChatGPT export";
     applyLocalSelectionState(info);
-    $("status").textContent = selectionStatus(selectedMessages, totalMessages);
+    $("status").textContent = t("loadingMessageList");
     $("toggle").textContent = t(info.enabled ? "hideSelection" : "showSelection");
 
     const progressState = await chrome.runtime.sendMessage({
@@ -197,7 +197,10 @@ async function init() {
     // ChatGPT now virtualizes the conversation aggressively, so the content
     // script may see only a small mounted window. Ask the background worker to
     // count logical messages from the full conversation mapping instead.
-    await refreshAuthoritativeSelectionState();
+    const loaded = await refreshAuthoritativeSelectionState();
+    if (!loaded) {
+      $("status").textContent = selectionStatus(selectedMessages, totalMessages);
+    }
   } catch (e) {
     $("status").textContent = t("openChatHint");
   }
