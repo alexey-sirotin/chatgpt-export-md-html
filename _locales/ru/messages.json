@@ -55,6 +55,9 @@
       }
     }
   },
+  "loadingMessageList": {
+    "message": "Получаю список сообщений…"
+  },
   "openChatHint": {
     "message": "Откройте чат на chatgpt.com и обновите страницу."
   },
