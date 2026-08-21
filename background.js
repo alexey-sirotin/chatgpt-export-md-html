@@ -12,6 +12,8 @@ import {
   isVisibleMessage,
   rawBranchFromCurrent,
   selectedBranchFromRaw,
+  branchExcludingFromRaw,
+  selectionSummaryFromRaw,
   textParts
 } from "./conversation.js";
 import {
@@ -150,6 +152,21 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg.type !== "GET_SELECTION_SUMMARY") return;
+
+  (async () => {
+    const selection = await chrome.tabs.sendMessage(msg.tabId, { type: "GET_SELECTION" });
+    const data = await getConversationInPage(msg.tabId);
+    const rawBranch = rawBranchFromCurrent(data);
+    return selectionSummaryFromRaw(rawBranch, selection);
+  })().then(respond).catch(e => {
+    respond({ error: e.message || String(e) });
+  });
+
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg.type !== "EXPORT_ACTIVE_TAB") return;
 
   (async () => {
@@ -162,7 +179,15 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const rawBranch = rawBranchFromCurrent(data);
     let branch = rawBranch.filter(node => isVisibleMessage(node.message));
 
-    if (!selection.selectAll) {
+    if (selection.selectAll) {
+      const hasExclusions =
+        (selection.excludedMessageIds || []).length > 0 ||
+        (selection.excludedTurnIds || []).length > 0;
+      if (hasExclusions) {
+        branch = branchExcludingFromRaw(rawBranch, selection);
+        if (!branch.length) throw new Error(t("nothingSelected"));
+      }
+    } else {
       const hasSelectedMessages = (selection.selectedMessageIds || []).length > 0;
       const hasSelectedTurns = (selection.selectedTurnIds || []).length > 0;
       if (!hasSelectedMessages && !hasSelectedTurns) {
