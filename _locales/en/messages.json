@@ -170,6 +170,9 @@
       }
     }
   },
+  "imageAttachment": {
+    "message": "Image"
+  },
   "formatsLabel": {
     "message": "Formats"
   },

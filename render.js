@@ -176,7 +176,7 @@ export function buildMarkdownExport({ title, conversationUrl, messages }) {
   const md = [
     `# ${title}`,
     "",
-    `Оригинал: ${conversationUrl}`,
+    `${t("htmlOriginalLabel")}: ${conversationUrl}`,
     ""
   ];
 
@@ -192,14 +192,14 @@ export function buildMarkdownExport({ title, conversationUrl, messages }) {
 
     for (const a of attachments) {
       if (a.error) {
-        md.push(`*[Не удалось скачать вложение ${a.originalName || a.id || a.sandboxPath || a.localName || ""}]*`, "");
+        md.push(`*[${t("htmlAttachmentFailed", a.originalName || a.id || a.sandboxPath || a.localName || "")}]*`, "");
         continue;
       }
       if (a.source === "sandbox" || !a.localPath) continue;
 
       const href = markdownHref(a.localPath);
       if ((a.mimeType || "").startsWith("image/")) {
-        const imageAlt = attachmentDisplayName(a, "Изображение");
+        const imageAlt = attachmentDisplayName(a, t("imageAttachment"));
         md.push(`[![${markdownLabel(imageAlt)}](${href})](${href})`, "");
       } else {
         md.push(`[${markdownLabel(a.originalName || a.localName)}](${href})`, "");
