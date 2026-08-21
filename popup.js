@@ -7,6 +7,7 @@ const t = (key, substitutions) => {
 };
 
 let tabId;
+let conversationId = "";
 let totalMessages = 0;
 let selectedMessages = 0;
 let hasAuthoritativeSelectionState = false;
@@ -16,9 +17,62 @@ async function send(type, payload = {}) {
   return chrome.tabs.sendMessage(tabId, { type, ...payload });
 }
 
+function conversationIdFromUrl(url) {
+  try {
+    const match = new URL(url).pathname.match(/\/c\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  } catch {
+    return "";
+  }
+}
+
+function exportNameDraftKey() {
+  const scope = conversationId ? `conversation:${conversationId}` : `tab:${tabId}`;
+  return `exportNameDraft:${scope}`;
+}
+
+async function loadExportNameDraft() {
+  if (tabId == null) return null;
+  try {
+    const key = exportNameDraftKey();
+    const saved = await chrome.storage.session.get(key);
+    const draft = saved[key];
+    if (!draft) return null;
+    if (conversationId) {
+      if (draft.conversationId !== conversationId) return null;
+    } else if (draft.conversationTitle !== originalConversationTitle) {
+      return null;
+    }
+    return typeof draft.exportName === "string" ? draft.exportName : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveExportNameDraft() {
+  if (tabId == null) return;
+  const key = exportNameDraftKey();
+  await chrome.storage.session.set({
+    [key]: {
+      conversationId: conversationId || null,
+      conversationTitle: originalConversationTitle,
+      exportName: $("name").value
+    }
+  });
+}
+
+async function clearExportNameDraft() {
+  if (tabId == null) return;
+  try {
+    await chrome.storage.session.remove(exportNameDraftKey());
+  } catch {}
+}
+
 let exportStartedAt = null;
 let exportTimer = null;
 let lastProgressText = "";
+let selectionLoadStartedAt = null;
+let selectionLoadTimer = null;
 
 function localizeStaticUi() {
   document.documentElement.lang = chrome.i18n.getUILanguage() || "ru";
@@ -41,7 +95,8 @@ function defaultNames() {
 function setWorking(working) {
   for (const id of [
     "toggle", "all", "none", "export", "name", "userName", "assistantName",
-    "exportMarkdown", "exportHtml", "exportJson", "saveAttachments", "separateAttachmentsFolder"
+    "exportMarkdown", "exportHtml", "exportJson", "includeOriginalLink",
+    "saveAttachments", "separateAttachmentsFolder"
   ]) {
     const el = $(id);
     if (el) el.disabled = working;
@@ -85,6 +140,27 @@ function stopProgress() {
   setWorking(false);
 }
 
+function renderSelectionLoading() {
+  if (!selectionLoadStartedAt) return;
+  const elapsed = Math.max(0, Math.floor((Date.now() - selectionLoadStartedAt) / 1000));
+  $("status").textContent = elapsed > 0
+    ? `${t("loadingMessageList")}\n${t("workingOk", elapsed)}`
+    : t("loadingMessageList");
+}
+
+function startSelectionLoading() {
+  selectionLoadStartedAt = Date.now();
+  renderSelectionLoading();
+  clearInterval(selectionLoadTimer);
+  selectionLoadTimer = setInterval(renderSelectionLoading, 1000);
+}
+
+function stopSelectionLoading() {
+  clearInterval(selectionLoadTimer);
+  selectionLoadTimer = null;
+  selectionLoadStartedAt = null;
+}
+
 async function loadNames() {
   const defaults = defaultNames();
   const saved = await chrome.storage.local.get(["userName", "assistantName"]);
@@ -119,12 +195,14 @@ async function loadOptions() {
     exportMarkdown: true,
     exportHtml: true,
     exportJson: true,
+    includeOriginalLink: true,
     saveAttachments: true,
     separateAttachmentsFolder: true
   });
   $("exportMarkdown").checked = saved.exportMarkdown !== false;
   $("exportHtml").checked = saved.exportHtml !== false;
   $("exportJson").checked = saved.exportJson !== false;
+  $("includeOriginalLink").checked = saved.includeOriginalLink !== false;
   $("saveAttachments").checked = saved.saveAttachments !== false;
   $("separateAttachmentsFolder").checked = saved.separateAttachmentsFolder !== false;
   syncAttachmentOptionsUi();
@@ -135,18 +213,27 @@ async function saveOptions() {
   const exportMarkdown = $("exportMarkdown").checked;
   const exportHtml = $("exportHtml").checked;
   const exportJson = $("exportJson").checked;
+  const includeOriginalLink = $("includeOriginalLink").checked;
   const saveAttachments = $("saveAttachments").checked;
   const separateAttachmentsFolder = $("separateAttachmentsFolder").checked;
   await chrome.storage.local.set({
     exportMarkdown,
     exportHtml,
     exportJson,
+    includeOriginalLink,
     saveAttachments,
     separateAttachmentsFolder
   });
   syncAttachmentOptionsUi();
   syncFormatOptionsUi();
-  return { exportMarkdown, exportHtml, exportJson, saveAttachments, separateAttachmentsFolder };
+  return {
+    exportMarkdown,
+    exportHtml,
+    exportJson,
+    includeOriginalLink,
+    saveAttachments,
+    separateAttachmentsFolder
+  };
 }
 
 function selectionStatus(selected, total = totalMessages) {
@@ -163,13 +250,13 @@ async function refreshAuthoritativeSelectionState() {
   try {
     const summary = await chrome.runtime.sendMessage({
       type: "GET_SELECTION_SUMMARY",
-      tabId
+      tabId,
+      conversationId
     });
     if (!Number.isFinite(summary?.total) || !Number.isFinite(summary?.selected)) return false;
     totalMessages = summary.total;
     selectedMessages = summary.selected;
     hasAuthoritativeSelectionState = true;
-    $("status").textContent = selectionStatus(selectedMessages, totalMessages);
     return true;
   } catch {
     return false;
@@ -179,13 +266,16 @@ async function refreshAuthoritativeSelectionState() {
 async function init() {
   localizeStaticUi();
   await Promise.all([loadNames(), loadOptions()]);
-  [ { id: tabId } ] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  tabId = activeTab?.id;
+  conversationId = conversationIdFromUrl(activeTab?.url || "");
   try {
     const info = await send("GET_INFO");
     originalConversationTitle = info.title || "";
-    $("name").value = originalConversationTitle || "ChatGPT export";
+    const defaultExportName = originalConversationTitle || "ChatGPT export";
+    const draftExportName = await loadExportNameDraft();
+    $("name").value = draftExportName ?? defaultExportName;
     applyLocalSelectionState(info);
-    $("status").textContent = t("loadingMessageList");
     $("toggle").textContent = t(info.enabled ? "hideSelection" : "showSelection");
 
     const progressState = await chrome.runtime.sendMessage({
@@ -194,14 +284,16 @@ async function init() {
     });
     if (restoreProgress(progressState)) return;
 
-    // ChatGPT now virtualizes the conversation aggressively, so the content
-    // script may see only a small mounted window. Ask the background worker to
-    // count logical messages from the full conversation mapping instead.
-    const loaded = await refreshAuthoritativeSelectionState();
-    if (!loaded) {
-      $("status").textContent = selectionStatus(selectedMessages, totalMessages);
-    }
+    // ChatGPT now virtualizes the conversation aggressively. On the first open
+    // we build a compact logical-message index from the full conversation; later
+    // popup opens can reuse it until the page observer sees a new turn or the
+    // short cache TTL expires.
+    startSelectionLoading();
+    await refreshAuthoritativeSelectionState();
+    stopSelectionLoading();
+    $("status").textContent = selectionStatus(selectedMessages, totalMessages);
   } catch (e) {
+    stopSelectionLoading();
     $("status").textContent = t("openChatHint");
   }
 }
@@ -260,11 +352,13 @@ $("export").onclick = async () => {
       exportMarkdown: options.exportMarkdown,
       exportHtml: options.exportHtml,
       exportJson: options.exportJson,
+      includeOriginalLink: options.includeOriginalLink,
       saveAttachments: options.saveAttachments,
       separateAttachmentsFolder: options.separateAttachmentsFolder
     });
     stopProgress();
     if (r.ok) {
+      await clearExportNameDraft();
       // The background worker only responds with ok after Chrome reports that
       // the archive download has completed successfully. Close the transient
       // popup at that point; the content-script selection state has already
@@ -295,18 +389,22 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (!exportStartedAt) return;
     stopProgress();
     if (msg.ok) {
-      window.close();
+      void clearExportNameDraft().finally(() => window.close());
     } else {
       $("status").textContent = t("errorPrefix", msg.error || "Unknown error");
     }
   }
 });
 
+$("name").addEventListener("input", () => {
+  saveExportNameDraft().catch(() => {});
+});
 $("userName").addEventListener("change", saveNames);
 $("assistantName").addEventListener("change", saveNames);
 $("exportMarkdown").addEventListener("change", saveOptions);
 $("exportHtml").addEventListener("change", saveOptions);
 $("exportJson").addEventListener("change", saveOptions);
+$("includeOriginalLink").addEventListener("change", saveOptions);
 $("saveAttachments").addEventListener("change", saveOptions);
 $("separateAttachmentsFolder").addEventListener("change", saveOptions);
 

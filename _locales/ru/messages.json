@@ -26,6 +26,18 @@
   "saveAttachmentsSeparate": {
     "message": "Сохранять вложения в отдельной папке"
   },
+  "includeOriginalLink": {
+    "message": "Добавлять ссылку на оригинал"
+  },
+  "omittedStartMarker": {
+    "message": "[… начало пропущено …]"
+  },
+  "omittedMessagesMarker": {
+    "message": "[… часть сообщений пропущена …]"
+  },
+  "omittedEndMarker": {
+    "message": "[… конец пропущен …]"
+  },
   "showSelection": {
     "message": "Выбрать сообщения"
   },
