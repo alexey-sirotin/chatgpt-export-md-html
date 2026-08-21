@@ -50,6 +50,67 @@ function inlineMarkdownToHtml(text) {
   return out;
 }
 
+function splitTableRow(line) {
+  const source = String(line ?? "").trim();
+  if (!source.includes("|")) return null;
+
+  let start = source.startsWith("|") ? 1 : 0;
+  let end = source.length;
+  if (source.endsWith("|") && !source.endsWith("\\|")) end--;
+
+  const cells = [];
+  let cell = "";
+  let inCode = false;
+
+  for (let i = start; i < end; i++) {
+    const ch = source[i];
+
+    if (ch === "\\" && source[i + 1] === "|") {
+      cell += "|";
+      i++;
+      continue;
+    }
+
+    if (ch === "`") {
+      inCode = !inCode;
+      cell += ch;
+      continue;
+    }
+
+    if (ch === "|" && !inCode) {
+      cells.push(cell.trim());
+      cell = "";
+      continue;
+    }
+
+    cell += ch;
+  }
+
+  cells.push(cell.trim());
+  return cells;
+}
+
+function tableDelimiterAlignments(line) {
+  const cells = splitTableRow(line);
+  if (!cells?.length) return null;
+
+  const alignments = [];
+  for (const raw of cells) {
+    const cell = raw.replace(/\s+/g, "");
+    if (!/^:?-{3,}:?$/.test(cell)) return null;
+
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    alignments.push(left && right ? "center" : right ? "right" : left ? "left" : null);
+  }
+  return alignments;
+}
+
+function tableCellHtml(tag, value, alignment) {
+  const cls = alignment ? ` class="align-${alignment}"` : "";
+  return `<${tag}${cls}>${inlineMarkdownToHtml(value)}</${tag}>`;
+}
+
 function markdownToHtml(markdown) {
   const lines = String(markdown ?? "").replaceAll("\r\n", "\n").split("\n");
   const out = [];
@@ -82,7 +143,8 @@ function markdownToHtml(markdown) {
     out.push(`<${type}>`);
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const fence = line.match(/^```\s*([^\s`]*)?.*$/);
     if (fence) {
       if (!inFence) {
@@ -111,6 +173,46 @@ function markdownToHtml(markdown) {
       flushParagraph();
       flushQuote();
       closeList();
+      continue;
+    }
+
+    const headerCells = splitTableRow(line);
+    const alignments = i + 1 < lines.length
+      ? tableDelimiterAlignments(lines[i + 1])
+      : null;
+    if (headerCells && alignments && headerCells.length === alignments.length) {
+      flushParagraph();
+      flushQuote();
+      closeList();
+
+      const columnCount = headerCells.length;
+      const headerHtml = headerCells
+        .map((cell, column) => tableCellHtml("th", cell, alignments[column]))
+        .join("");
+      const bodyRows = [];
+
+      let j = i + 2;
+      while (j < lines.length && lines[j].trim()) {
+        const cells = splitTableRow(lines[j]);
+        if (!cells) break;
+
+        const normalized = Array.from(
+          { length: columnCount },
+          (_, column) => cells[column] ?? ""
+        );
+        bodyRows.push(
+          `<tr>${normalized.map((cell, column) =>
+            tableCellHtml("td", cell, alignments[column])
+          ).join("")}</tr>`
+        );
+        j++;
+      }
+
+      out.push(
+        `<div class="table-wrap"><table><thead><tr>${headerHtml}</tr></thead>` +
+        `<tbody>${bodyRows.join("")}</tbody></table></div>`
+      );
+      i = j - 1;
       continue;
     }
 
@@ -284,6 +386,12 @@ export function buildHtmlExport({ title, conversationUrl, messages }) {
   code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 0.92em; }
   :not(pre) > code { padding: 0.08em 0.3em; border-radius: 4px; background: color-mix(in srgb, CanvasText 8%, Canvas); }
   a { color: LinkText; }
+  .table-wrap { margin: 0.9em 0; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 0.45em 0.7em; text-align: left; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent); }
+  thead th { font-weight: 650; border-bottom-color: color-mix(in srgb, CanvasText 38%, transparent); }
+  th.align-center, td.align-center { text-align: center; }
+  th.align-right, td.align-right { text-align: right; }
   figure { margin: 14px 0 4px; }
   figure img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
   figcaption { margin-top: 5px; font-size: 0.8em; opacity: 0.65; }
@@ -293,6 +401,8 @@ export function buildHtmlExport({ title, conversationUrl, messages }) {
     body { background: white; color: black; }
     main { max-width: none; padding: 0; }
     .message { break-inside: auto; border-color: #bbb; background: white !important; }
+    .table-wrap { overflow: visible; }
+    thead { display: table-header-group; }
     figure, pre { break-inside: avoid; }
     a { color: inherit; text-decoration: underline; }
   }
@@ -309,4 +419,3 @@ ${htmlMessages}
 </body>
 </html>`;
 }
-
