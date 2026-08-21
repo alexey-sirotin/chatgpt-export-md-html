@@ -170,6 +170,9 @@
       }
     }
   },
+  "imageAttachment": {
+    "message": "Изображение"
+  },
   "formatsLabel": {
     "message": "Форматы"
   },
