@@ -26,6 +26,18 @@
   "saveAttachmentsSeparate": {
     "message": "Save attachments in a separate folder"
   },
+  "includeOriginalLink": {
+    "message": "Include original chat link"
+  },
+  "omittedStartMarker": {
+    "message": "[… beginning omitted …]"
+  },
+  "omittedMessagesMarker": {
+    "message": "[… some messages omitted …]"
+  },
+  "omittedEndMarker": {
+    "message": "[… end omitted …]"
+  },
   "showSelection": {
     "message": "Select messages"
   },

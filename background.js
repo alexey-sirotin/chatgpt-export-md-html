@@ -13,9 +13,15 @@ import {
   rawBranchFromCurrent,
   selectedBranchFromRaw,
   branchExcludingFromRaw,
-  selectionSummaryFromRaw,
+  logicalSelectionGroups,
   textParts
 } from "./conversation.js";
+import {
+  buildSelectionIndex,
+  selectionSummaryFromIndex,
+  selectionIndexKnownIds,
+  SELECTION_INDEX_SCHEMA_VERSION
+} from "./selection-index.js";
 import {
   attachmentRecords,
   replaceSandboxLinkDestinations
@@ -145,9 +151,158 @@ async function finishExportProgress(tabId, result) {
   }
 }
 
+const SELECTION_INDEX_TTL_MS = 5 * 60 * 1000;
+const selectionIndexMemory = new Map();
+
+function selectionIndexKey(conversationId) {
+  return `selectionIndex:${conversationId}`;
+}
+
+async function loadSelectionIndexRecord(conversationId) {
+  if (!conversationId) return null;
+
+  const memory = selectionIndexMemory.get(conversationId);
+  if (memory) return memory;
+
+  try {
+    const key = selectionIndexKey(conversationId);
+    const saved = await chrome.storage.session.get(key);
+    const record = saved[key] || null;
+    if (record) selectionIndexMemory.set(conversationId, record);
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+async function persistSelectionIndexRecord(conversationId, record) {
+  selectionIndexMemory.set(conversationId, record);
+  try {
+    await chrome.storage.session.set({ [selectionIndexKey(conversationId)]: record });
+  } catch (e) {
+    console.warn("chatgpt2md: could not persist selection index", e);
+  }
+}
+
+async function storeSelectionIndex(conversationId, index) {
+  if (!conversationId || !index) return;
+  await persistSelectionIndexRecord(conversationId, {
+    schemaVersion: SELECTION_INDEX_SCHEMA_VERSION,
+    conversationId,
+    builtAt: Date.now(),
+    dirty: false,
+    index
+  });
+}
+
+async function freshSelectionIndex(conversationId) {
+  const record = await loadSelectionIndexRecord(conversationId);
+  if (!record) return null;
+  if (record.schemaVersion !== SELECTION_INDEX_SCHEMA_VERSION) return null;
+  if (record.dirty) return null;
+  if (!Number.isFinite(record.builtAt)) return null;
+  if (Date.now() - record.builtAt > SELECTION_INDEX_TTL_MS) return null;
+  if (record.index?.schemaVersion !== SELECTION_INDEX_SCHEMA_VERSION) return null;
+  return record.index;
+}
+
+async function markSelectionIndexDirtyIfNeeded(conversationId, ids = [], temporaryIds = []) {
+  const record = await loadSelectionIndexRecord(conversationId);
+  if (!record || record.dirty) return !!record?.dirty;
+  if (record.schemaVersion !== SELECTION_INDEX_SCHEMA_VERSION || !record.index) return false;
+
+  const known = selectionIndexKnownIds(record.index);
+  const hasUnknownStableId = ids.some(id => id && !known.has(String(id)));
+  const hasTemporaryId = temporaryIds.some(Boolean);
+  if (!hasUnknownStableId && !hasTemporaryId) return false;
+
+  await persistSelectionIndexRecord(conversationId, {
+    ...record,
+    dirty: true,
+    dirtiedAt: Date.now()
+  });
+  return true;
+}
+
+async function mountedIdsMatchSelectionIndex(tabId, conversationId, index) {
+  try {
+    const snapshot = await chrome.tabs.sendMessage(tabId, { type: "GET_SELECTION_INDEX_IDS" });
+    if (!snapshot) return true;
+    if (snapshot.conversationId && snapshot.conversationId !== conversationId) return false;
+    if ((snapshot.temporaryIds || []).length) return false;
+
+    const known = selectionIndexKnownIds(index);
+    return (snapshot.ids || []).every(id => known.has(String(id)));
+  } catch {
+    // Older page instances may not have the cache observer injected yet. The TTL
+    // still protects the cache; a page refresh after extension reload adds it.
+    return true;
+  }
+}
+
+async function enableSelectionIndexWatch(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "ENABLE_SELECTION_INDEX_WATCH" });
+  } catch {
+    // Existing tabs need one page refresh after the manifest first gains the
+    // observer content script. Caching still works with TTL until then.
+  }
+}
+
+function omissionBoundaries(rawBranch, selectedBranch) {
+  const selectedNodes = new Set(selectedBranch);
+  const groups = logicalSelectionGroups(rawBranch).filter(group =>
+    group.nodes.some(node => isVisibleMessage(node.message))
+  );
+  const groupSelected = groups.map(group =>
+    group.nodes.some(node => selectedNodes.has(node))
+  );
+  const firstSelected = groupSelected.indexOf(true);
+  const lastSelected = groupSelected.lastIndexOf(true);
+  const beforeNodes = new Set();
+
+  if (firstSelected === -1) {
+    return { beforeNodes, omittedAtStart: false, omittedAtEnd: false };
+  }
+
+  let omittedSinceSelected = false;
+  for (let i = firstSelected + 1; i <= lastSelected; i++) {
+    if (!groupSelected[i]) {
+      omittedSinceSelected = true;
+      continue;
+    }
+
+    if (omittedSinceSelected) {
+      const firstSelectedVisible = groups[i].nodes.find(node =>
+        selectedNodes.has(node) && isVisibleMessage(node.message)
+      );
+      if (firstSelectedVisible) beforeNodes.add(firstSelectedVisible);
+      omittedSinceSelected = false;
+    }
+  }
+
+  return {
+    beforeNodes,
+    omittedAtStart: firstSelected > 0,
+    omittedAtEnd: lastSelected < groups.length - 1
+  };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg.type !== "GET_EXPORT_STATE") return;
   loadExportProgress(msg.tabId).then(state => respond(state || { active: false }));
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg.type !== "SELECTION_INDEX_SEEN_IDS") return;
+
+  markSelectionIndexDirtyIfNeeded(
+    msg.conversationId,
+    msg.ids || [],
+    msg.temporaryIds || []
+  ).then(dirty => respond({ dirty })).catch(() => respond({ dirty: false }));
+
   return true;
 });
 
@@ -156,9 +311,33 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
   (async () => {
     const selection = await chrome.tabs.sendMessage(msg.tabId, { type: "GET_SELECTION" });
-    const data = await getConversationInPage(msg.tabId);
-    const rawBranch = rawBranchFromCurrent(data);
-    return selectionSummaryFromRaw(rawBranch, selection);
+    let index = msg.conversationId ? await freshSelectionIndex(msg.conversationId) : null;
+    let cached = !!index;
+
+    if (index) {
+      const matches = await mountedIdsMatchSelectionIndex(msg.tabId, msg.conversationId, index);
+      if (!matches) {
+        await markSelectionIndexDirtyIfNeeded(msg.conversationId, ["__mounted-index-mismatch__"]);
+        index = null;
+        cached = false;
+      }
+    }
+
+    if (!index) {
+      const data = await getConversationInPage(msg.tabId);
+      if (msg.conversationId && data.conversation_id !== msg.conversationId) {
+        throw new Error("Conversation changed while loading message list");
+      }
+      const rawBranch = rawBranchFromCurrent(data);
+      index = buildSelectionIndex(rawBranch);
+      await storeSelectionIndex(data.conversation_id, index);
+    }
+
+    await enableSelectionIndexWatch(msg.tabId);
+    return {
+      ...selectionSummaryFromIndex(index, selection),
+      cached
+    };
   })().then(respond).catch(e => {
     respond({ error: e.message || String(e) });
   });
@@ -177,6 +356,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     await reportExportProgress(tabId, t("progressLoadingChat"));
     const data = await getConversationInPage(tabId);
     const rawBranch = rawBranchFromCurrent(data);
+    await storeSelectionIndex(data.conversation_id, buildSelectionIndex(rawBranch));
+    await enableSelectionIndexWatch(tabId);
     let branch = rawBranch.filter(node => isVisibleMessage(node.message));
 
     if (selection.selectAll) {
@@ -199,6 +380,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       }
     }
 
+    const omission = omissionBoundaries(rawBranch, branch);
     await reportExportProgress(tabId, t("progressPreparingMessages", branch.length));
 
     const exportName = safeName(msg.exportName || data.title);
@@ -214,6 +396,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const exportMarkdown = msg.exportMarkdown !== false;
     const exportHtml = msg.exportHtml !== false;
     const exportJsonEnabled = msg.exportJson !== false;
+    const includeOriginalLink = msg.includeOriginalLink !== false;
     if (!exportMarkdown && !exportHtml && !exportJsonEnabled) throw new Error(t("chooseFormat"));
     const saveAttachments = msg.saveAttachments !== false;
     const separateAttachmentsFolder = msg.separateAttachmentsFolder !== false;
@@ -230,7 +413,9 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       : 0;
     let downloadedAttachments = 0;
     let idx = 0;
+    let omissionPending = omission.omittedAtStart;
     for (const node of branch) {
+      if (omission.beforeNodes.has(node)) omissionPending = true;
       idx++;
       if (idx === 1 || idx === branch.length || idx % 10 === 0) {
         await reportExportProgress(tabId, t("progressProcessingMessages", [idx, branch.length]));
@@ -332,18 +517,25 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         authorName: role === "user" ? userName : assistantName,
         createdAt: isoUtc(msgObj.create_time),
         model: msgObj.metadata?.model_slug || msgObj.metadata?.resolved_model_slug || null,
+        ...(omissionPending ? { omittedBefore: true } : {}),
         content: texts.map(text => ({ type: "text", text, format: "markdown" })),
         attachments: jsonAtt
       });
+      omissionPending = false;
     }
 
+    if (omission.omittedAtEnd && jsonMessages.length) {
+      jsonMessages[jsonMessages.length - 1].omittedAfter = true;
+    }
+
+    const conversationUrl = `https://chatgpt.com/c/${data.conversation_id}`;
     const exportJson = {
       schemaVersion: 1,
       exporter: "chatgpt2md",
       exporterVersion: "0.1.30",
       title: exportName,
       conversationId: data.conversation_id,
-      conversationUrl: `https://chatgpt.com/c/${data.conversation_id}`,
+      ...(includeOriginalLink ? { conversationUrl } : {}),
       exportedAt: new Date().toISOString(),
       userName,
       assistantName,
@@ -351,13 +543,13 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     };
 
     await reportExportProgress(tabId, t("progressBuildingFiles"));
-    const conversationUrl = `https://chatgpt.com/c/${data.conversation_id}`;
     const files = [];
     if (exportMarkdown) {
       const markdown = buildMarkdownExport({
         title: conversationTitle,
         conversationUrl,
-        messages: jsonMessages
+        messages: jsonMessages,
+        includeOriginalLink
       });
       files.push({ name: `${exportName}.md`, bytes: enc(markdown) });
     }
@@ -365,7 +557,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       const html = buildHtmlExport({
         title: conversationTitle,
         conversationUrl,
-        messages: jsonMessages
+        messages: jsonMessages,
+        includeOriginalLink
       });
       files.push({ name: `${exportName}.html`, bytes: enc(html) });
     }
