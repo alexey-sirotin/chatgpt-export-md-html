@@ -13,10 +13,8 @@
     return !!value && value.startsWith('request-');
   }
 
-  function stableMessageIdInContext(el) {
-    const container = el?.closest?.('[data-turn-id-container]') || el;
+  function stableMessageIdInContainer(container) {
     if (!container) return null;
-
     const messageEl = container.matches?.('[data-message-id]')
       ? container
       : container.querySelector?.('[data-message-id]');
@@ -27,26 +25,43 @@
   function collectIds() {
     const stableIds = new Set();
     const temporaryIds = new Set();
+    const containers = document.querySelectorAll('[data-turn-id-container]');
 
-    for (const el of document.querySelectorAll('[data-turn-id-container], [data-turn-id], [data-message-id]')) {
-      for (const attr of ['data-turn-id-container', 'data-turn-id', 'data-message-id']) {
-        const value = el.getAttribute(attr);
-        if (!value || value === 'client-created-root') continue;
+    // Mirror content.js selection identities instead of treating every internal
+    // data-turn-id in ChatGPT's rendered subtree as a conversation identity.
+    // Nested/internal turn IDs can change during hydration and were causing the
+    // compact selection cache to invalidate even when the logical chat had not
+    // changed.
+    for (const container of containers) {
+      const sourceTurnId = container.getAttribute('data-turn-id-container');
+      if (!sourceTurnId || sourceTurnId === 'client-created-root') continue;
 
-        if (!isTemporaryId(value)) {
-          stableIds.add(value);
-          continue;
-        }
+      const messageId = stableMessageIdInContainer(container);
+      if (messageId) stableIds.add(messageId);
 
-        // ChatGPT can keep request-* as the turn/container ID even after the
-        // rendered message has received its final UUID in data-message-id. In
-        // that state the temporary ID is not evidence that the conversation
-        // changed: use the stable message ID instead. Only unresolved request-*
-        // IDs should invalidate the compact selection index.
-        const stableMessageId = stableMessageIdInContext(el);
-        if (stableMessageId) stableIds.add(stableMessageId);
-        else temporaryIds.add(value);
+      if (isTemporaryId(sourceTurnId)) {
+        // A request-* container is resolved as soon as the rendered message has
+        // its stable UUID. Only an actually unresolved request should dirty the
+        // cache.
+        if (!messageId) temporaryIds.add(sourceTurnId);
+      } else {
+        stableIds.add(sourceTurnId);
       }
+    }
+
+    // Defensive fallback for a future DOM variant where mounted turns are no
+    // longer wrapped in data-turn-id-container. This mirrors content.js's
+    // fallback and ignores data-turn-id nodes that already belong to a known
+    // container, avoiding hydration-only internal IDs.
+    for (const el of document.querySelectorAll('[data-turn-id]')) {
+      if (el.closest?.('[data-turn-id-container]')) continue;
+      const turnId = el.getAttribute('data-turn-id');
+      if (!turnId || turnId === 'client-created-root') continue;
+      if (isTemporaryId(turnId)) temporaryIds.add(turnId);
+      else stableIds.add(turnId);
+
+      const messageId = stableMessageIdInContainer(el);
+      if (messageId) stableIds.add(messageId);
     }
 
     return {
