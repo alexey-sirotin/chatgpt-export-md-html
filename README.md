@@ -85,6 +85,14 @@ This avoids the previous whole-archive binary-string/base64/data-URL conversion,
 
 The ZIP itself is still assembled in memory, so very large exports can use several gigabytes of browser RAM while attachments are downloaded and the archive is built. Further streaming/memory optimization is possible if larger real-world exports require it.
 
+## Firefox status
+
+Firefox support is currently being tested on the development branch. The shared export core works in both Firefox and Chromium-based browsers; the remaining browser-specific difference is the Manifest V3 background/download environment.
+
+Chromium uses a background service worker plus an offscreen document for Blob/Object URL creation. Firefox uses a Manifest V3 background script and can create Blob/Object URLs directly in the background document.
+
+The temporary shared test manifest intentionally contains both background declarations and the Chromium-only `offscreen` permission. This produces harmless developer warnings in both browser families and is not intended as the final packaged manifest. Final packaging will keep the codebase shared and use only a small browser-specific manifest difference.
+
 ## Known limitations
 
 - The extension depends on ChatGPT's current DOM structure and undocumented internal endpoints. Changes to ChatGPT may temporarily break some functionality.
@@ -92,7 +100,7 @@ The ZIP itself is still assembled in memory, so very large exports can use sever
 - Audio transcription text shown by ChatGPT is not currently exported separately.
 - Shift-click range selection is limited to messages currently represented by the ChatGPT page DOM; full-branch selection itself is handled independently of DOM virtualization.
 - Very large exports are still assembled in memory and can require substantial RAM.
-- Firefox is not currently supported.
+- Firefox packaging is not finalized yet; the current development branch uses a compatibility-test manifest that emits browser-specific warnings.
 
 ## Privacy
 
@@ -112,8 +120,9 @@ background.js                Export orchestration, selection cache and download 
 chatgpt-api.js               ChatGPT session/API access and file resolution
 content.js                   Chat-page integration and message selection UI
 conversation.js              Conversation branch and message normalization
-offscreen.html               MV3 offscreen document host
-offscreen.js                 Blob/Object URL creation for ZIP downloads
+download-url.js              Cross-browser Blob/Object URL download helper
+offscreen.html               Chromium MV3 offscreen document host
+offscreen.js                 Chromium Blob/Object URL creation for ZIP downloads
 popup.html                   Extension popup
 popup.js                     Popup behavior
 render.js                    Markdown/HTML rendering
