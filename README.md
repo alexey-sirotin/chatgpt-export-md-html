@@ -38,7 +38,7 @@ There is currently no Chrome Web Store release. Install the extension in develop
 6. Open or refresh a conversation on `https://chatgpt.com/`.
 7. Click the extension button in the browser toolbar.
 
-No build step is required.
+No build step is required for Chromium development.
 
 ## Usage
 
@@ -91,7 +91,9 @@ Firefox support is currently being tested on the development branch. The shared 
 
 Chromium uses a background service worker plus an offscreen document for Blob/Object URL creation. Firefox uses a Manifest V3 background script and can create Blob/Object URLs directly in the background document.
 
-The temporary shared test manifest intentionally contains both background declarations and the Chromium-only `offscreen` permission. This produces harmless developer warnings in both browser families and is not intended as the final packaged manifest. Final packaging will keep the codebase shared and use only a small browser-specific manifest difference.
+The temporary shared test manifest intentionally contains both background declarations and the Chromium-only `offscreen` permission. This produces harmless developer warnings in both browser families and is useful only for compatibility testing.
+
+Release packaging is now automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission and Firefox-specific Gecko metadata. The Firefox package targets Firefox 128 or later.
 
 ## Known limitations
 
@@ -100,7 +102,7 @@ The temporary shared test manifest intentionally contains both background declar
 - Audio transcription text shown by ChatGPT is not currently exported separately.
 - Shift-click range selection is limited to messages currently represented by the ChatGPT page DOM; full-branch selection itself is handled independently of DOM virtualization.
 - Very large exports are still assembled in memory and can require substantial RAM.
-- Firefox packaging is not finalized yet; the current development branch uses a compatibility-test manifest that emits browser-specific warnings.
+- Firefox support is still under live testing and is not yet part of a public release.
 
 ## Privacy
 
@@ -113,24 +115,26 @@ Extension preferences and temporary per-session UI/cache state are stored using 
 ## Project structure
 
 ```text
-_locales/                    UI translations
-icons/                       Extension icons
-attachments.js               Attachment discovery and normalization
-background.js                Export orchestration, selection cache and download lifecycle
-chatgpt-api.js               ChatGPT session/API access and file resolution
-content.js                   Chat-page integration and message selection UI
-conversation.js              Conversation branch and message normalization
-download-url.js              Cross-browser Blob/Object URL download helper
-offscreen.html               Chromium MV3 offscreen document host
-offscreen.js                 Chromium Blob/Object URL creation for ZIP downloads
-popup.html                   Extension popup
-popup.js                     Popup behavior
-render.js                    Markdown/HTML rendering
-selection-cache-observer.js  Lightweight page observer for selection-cache invalidation
-selection-index.js           Compact logical message-selection index
-utils.js                     Shared helpers
-zip.js                       ZIP writer
-manifest.json                Manifest V3 extension manifest
+.github/workflows/package.yml  GitHub Actions packaging workflow
+_locales/                      UI translations
+icons/                         Extension icons
+scripts/package.sh             Chromium/Firefox package builder
+attachments.js                 Attachment discovery and normalization
+background.js                  Export orchestration, selection cache and download lifecycle
+chatgpt-api.js                 ChatGPT session/API access and file resolution
+content.js                     Chat-page integration and message selection UI
+conversation.js                Conversation branch and message normalization
+download-url.js                Cross-browser Blob/Object URL download helper
+offscreen.html                 Chromium MV3 offscreen document host
+offscreen.js                   Chromium Blob/Object URL creation for ZIP downloads
+popup.html                     Extension popup
+popup.js                       Popup behavior
+render.js                      Markdown/HTML rendering
+selection-cache-observer.js    Lightweight page observer for selection-cache invalidation
+selection-index.js             Compact logical message-selection index
+utils.js                       Shared helpers
+zip.js                         ZIP writer
+manifest.json                  Manifest V3 development manifest
 ```
 
 ## Acknowledgements
@@ -150,6 +154,18 @@ Requirements, product decisions and real-world testing by the author; architectu
 The project uses plain JavaScript and Manifest V3 with no build system or runtime dependencies.
 
 For local development, edit the files in the repository and click **Reload** for the extension on `chrome://extensions`. Refresh the open ChatGPT page after changes to content scripts such as `content.js` or `selection-cache-observer.js`.
+
+To build browser-specific archives locally on a Unix-like environment:
+
+```bash
+bash scripts/package.sh
+```
+
+The resulting archives are written to `dist/`.
+
+For release packaging, pushing a tag such as `v0.1.32` runs the GitHub Actions packaging workflow. The workflow verifies that the tag matches the version in `manifest.json`, builds both browser archives and creates a **draft GitHub Release** with both ZIP files attached. The draft can then be reviewed and published manually, which keeps release immutability compatible with the packaging flow.
+
+Pull requests also run the packaging workflow as a validation check and expose the two ZIP files as a workflow artifact.
 
 ## License
 
