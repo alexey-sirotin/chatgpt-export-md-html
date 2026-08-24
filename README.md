@@ -2,7 +2,7 @@
 
 A browser extension for exporting the current ChatGPT conversation branch to local Markdown, HTML and JSON files, with attachments saved alongside the export.
 
-Current version: **0.1.31**
+Current public release: **0.1.31**
 
 ## Features
 
@@ -23,12 +23,15 @@ Current version: **0.1.31**
 - Long-export progress survives closing and reopening the extension popup.
 - Cache the logical message-selection index for faster popup reopening while keeping export contents authoritative from a fresh conversation fetch.
 - Use Blob/Object URL downloads for large ZIP archives instead of base64 data URLs.
+- Shared Chromium and Firefox codebase with browser-specific release packaging.
 - English and Russian UI.
 - No external CSS or JavaScript is required by exported HTML.
 
 ## Installation
 
-There is currently no Chrome Web Store release. Install the extension in developer mode:
+There is currently no browser-store release. For development/testing:
+
+### Chromium
 
 1. Clone or download this repository.
 2. Open `chrome://extensions` in Chrome, Vivaldi or another Chromium-based browser.
@@ -38,7 +41,17 @@ There is currently no Chrome Web Store release. Install the extension in develop
 6. Open or refresh a conversation on `https://chatgpt.com/`.
 7. Click the extension button in the browser toolbar.
 
-No build step is required for Chromium development.
+The repository-root manifest is intended for development. Release packaging removes Firefox-only manifest fields from the Chromium archive.
+
+### Firefox
+
+Firefox 128 or later is supported. Build the browser packages with:
+
+```bash
+bash scripts/package.sh
+```
+
+Unpack `dist/chatgpt-export-md-html-<version>-firefox.zip`, open `about:debugging`, choose **This Firefox** → **Load Temporary Add-on…**, and select the packaged `manifest.json`.
 
 ## Usage
 
@@ -79,21 +92,22 @@ When attachment saving is disabled, Markdown and HTML still retain expected loca
 
 ### Large archives
 
-ZIP files are assembled in memory and saved through Blob/Object URLs instead of whole-archive base64 data URLs. Chromium creates the Blob/Object URL in an MV3 offscreen document, while Firefox can create it directly in its background document.
+ZIP files are assembled in memory and saved through Blob/Object URLs instead of whole-archive base64 data URLs. Chromium creates the Blob/Object URL in an MV3 offscreen document, while Firefox creates it directly in its background document.
 
 This avoids the previous whole-archive binary-string/base64/data-URL conversion, which multiplied memory usage and could terminate the browser on large image-heavy exports. The Chromium path has been live-tested with a roughly **160 MB** ZIP containing **75 attachments**.
 
 The ZIP itself is still assembled in memory, so very large exports can use several gigabytes of browser RAM while attachments are downloaded and the archive is built. Further streaming/memory optimization is possible if larger real-world exports require it.
 
-## Firefox status
+## Firefox support
 
-Firefox support is currently being tested on the development branch. The shared export core works in both Firefox and Chromium-based browsers; the remaining browser-specific difference is the Manifest V3 background/download environment.
+Firefox support uses the same export, selection, rendering, attachment and ZIP code as Chromium. Only the Manifest V3 background/download environment differs:
 
-Chromium uses a background service worker plus an offscreen document for Blob/Object URL creation. Firefox uses a Manifest V3 background script and can create Blob/Object URLs directly in the background document.
+- Chromium uses a background service worker plus an offscreen document for Blob/Object URL creation.
+- Firefox uses a Manifest V3 background script and creates Blob/Object URLs directly in the background document.
 
-The temporary shared test manifest intentionally contains both background declarations and the Chromium-only `offscreen` permission. This produces harmless developer warnings in both browser families and is useful only for compatibility testing.
+Release packaging is automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission and Firefox-specific Gecko metadata. The Firefox package targets Firefox 128 or later.
 
-Release packaging is now automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission and Firefox-specific Gecko metadata. The Firefox package targets Firefox 128 or later.
+Both packaged variants have been live-tested without manifest warnings. Firefox testing has covered normal export, selective-message export and attachment saving.
 
 ## Known limitations
 
@@ -102,7 +116,7 @@ Release packaging is now automated. `scripts/package.sh` produces two clean arch
 - Audio transcription text shown by ChatGPT is not currently exported separately.
 - Shift-click range selection is limited to messages currently represented by the ChatGPT page DOM; full-branch selection itself is handled independently of DOM virtualization.
 - Very large exports are still assembled in memory and can require substantial RAM.
-- Firefox support is still under live testing and is not yet part of a public release.
+- The Firefox download path has not yet received the same 160 MB stress test as Chromium.
 
 ## Privacy
 
@@ -153,7 +167,7 @@ Requirements, product decisions and real-world testing by the author; architectu
 
 The project uses plain JavaScript and Manifest V3 with no build system or runtime dependencies.
 
-For local development, edit the files in the repository and click **Reload** for the extension on `chrome://extensions`. Refresh the open ChatGPT page after changes to content scripts such as `content.js` or `selection-cache-observer.js`.
+For local Chromium development, edit the files in the repository and click **Reload** for the extension on `chrome://extensions`. Refresh the open ChatGPT page after changes to content scripts such as `content.js` or `selection-cache-observer.js`.
 
 To build browser-specific archives locally on a Unix-like environment:
 
