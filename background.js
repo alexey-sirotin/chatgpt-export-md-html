@@ -68,6 +68,115 @@ function waitForDownloadCompletion(downloadId) {
   });
 }
 
+const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
+let creatingOffscreenDocument = null;
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function findOffscreenClient() {
+  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
+  const matchedClients = await clients.matchAll({ includeUncontrolled: true });
+  return matchedClients.find(client => client.url === offscreenUrl) || null;
+}
+
+async function ensureOffscreenClient() {
+  const existing = await findOffscreenClient();
+  if (existing) return existing;
+
+  if (!chrome.offscreen?.createDocument) {
+    throw new Error("Offscreen API is unavailable in this browser");
+  }
+
+  if (!creatingOffscreenDocument) {
+    creatingOffscreenDocument = (async () => {
+      try {
+        await chrome.offscreen.createDocument({
+          url: OFFSCREEN_DOCUMENT_PATH,
+          reasons: ["BLOBS"],
+          justification: "Create Blob URLs for large ZIP downloads without base64 expansion"
+        });
+      } catch (e) {
+        // Another export or a restarted service worker may have created the one
+        // allowed offscreen document between our check and createDocument().
+        if (!await findOffscreenClient()) throw e;
+      }
+    })().finally(() => {
+      creatingOffscreenDocument = null;
+    });
+  }
+
+  await creatingOffscreenDocument;
+
+  // createDocument() resolves after the page loads, but give the service-worker
+  // client registry a short moment to expose it as well.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const client = await findOffscreenClient();
+    if (client) return client;
+    await delay(25);
+  }
+
+  throw new Error("Offscreen document was created but its client is unavailable");
+}
+
+async function createOffscreenObjectUrl(bytes, mimeType) {
+  const client = await ensureOffscreenClient();
+  const channel = new MessageChannel();
+
+  // makeZip() returns a full-buffer Uint8Array. Keep the helper safe for other
+  // callers too: only copy if a view covers part of a larger ArrayBuffer.
+  const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer
+    : bytes.slice().buffer;
+
+  const response = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      channel.port1.close();
+      reject(new Error("Timed out while creating ZIP Blob URL"));
+    }, 30000);
+
+    channel.port1.onmessage = event => {
+      clearTimeout(timer);
+      channel.port1.close();
+      const result = event.data || {};
+      if (!result.ok || !result.url) {
+        reject(new Error(result.error || "Could not create ZIP Blob URL"));
+        return;
+      }
+      resolve(result.url);
+    };
+
+    channel.port1.onmessageerror = () => {
+      clearTimeout(timer);
+      channel.port1.close();
+      reject(new Error("Could not receive ZIP Blob URL"));
+    };
+  });
+
+  // This is Web ServiceWorker messaging, not chrome.runtime messaging. It uses
+  // structured clone and lets us transfer the ArrayBuffer without the 64 MiB
+  // JSON-message limit or base64 conversion. Transferring also detaches the
+  // archive buffer from this worker immediately.
+  client.postMessage(
+    { type: "CREATE_OBJECT_URL", buffer, mimeType },
+    [buffer, channel.port2]
+  );
+
+  return response;
+}
+
+async function revokeOffscreenObjectUrl(url) {
+  if (!url) return;
+  try {
+    const client = await findOffscreenClient();
+    client?.postMessage({ type: "REVOKE_OBJECT_URL", url });
+  } catch {
+    // Best-effort cleanup. If the offscreen document vanished, its Blob URLs
+    // vanished with it as well.
+  }
+}
+
 const exportProgressState = new Map();
 
 function exportProgressKey(tabId) {
@@ -532,7 +641,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const exportJson = {
       schemaVersion: 1,
       exporter: "chatgpt2md",
-      exporterVersion: "0.1.30",
+      exporterVersion: "0.1.31",
       title: exportName,
       conversationId: data.conversation_id,
       ...(includeOriginalLink ? { conversationUrl } : {}),
@@ -567,24 +676,29 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     }
     files.push(...mediaFiles);
     await reportExportProgress(tabId, t("progressPackingZip"));
-    const zip = makeZip(files);
+    let zip = makeZip(files);
     const filename = `${exportName}.zip`;
 
-    // MV3 service workers do not provide URL.createObjectURL().
-    // For the prototype use a data URL. This is fine for modest exports;
-    // later we will move large archives to an offscreen document.
-    await reportExportProgress(tabId, t("progressPreparingDownload"));
-    let binary = "";
-    const chunk = 0x4000;
-    for (let i = 0; i < zip.length; i += chunk) {
-      binary += String.fromCharCode(...zip.subarray(i, i + chunk));
-    }
-    const url = `data:application/zip;base64,${btoa(binary)}`;
+    // makeZip() copied every file into the archive buffer, so release the
+    // original attachment buffers before handing the ZIP to the offscreen page.
+    // This keeps peak memory close to the unavoidable source+ZIP stage instead
+    // of retaining another full archive worth of media during the download.
+    files.length = 0;
+    mediaFiles.length = 0;
 
-    await reportExportProgress(tabId, t("progressSendingBrowser"));
-    const downloadId = await chrome.downloads.download({ url, filename, saveAs: true });
-    await reportExportProgress(tabId, t("progressWaitingDownload"));
-    await waitForDownloadCompletion(downloadId);
+    await reportExportProgress(tabId, t("progressPreparingDownload"));
+    let url = null;
+    try {
+      url = await createOffscreenObjectUrl(zip, "application/zip");
+      zip = null;
+
+      await reportExportProgress(tabId, t("progressSendingBrowser"));
+      const downloadId = await chrome.downloads.download({ url, filename, saveAs: true });
+      await reportExportProgress(tabId, t("progressWaitingDownload"));
+      await waitForDownloadCompletion(downloadId);
+    } finally {
+      await revokeOffscreenObjectUrl(url);
+    }
 
     // A successful export ends the temporary message-selection session. Do the
     // reset from the background worker so it still happens if the popup closes
