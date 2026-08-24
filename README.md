@@ -94,7 +94,7 @@ When attachment saving is disabled, Markdown and HTML still retain expected loca
 
 ZIP files are assembled in memory and saved through Blob/Object URLs instead of whole-archive base64 data URLs. Chromium creates the Blob/Object URL in an MV3 offscreen document, while Firefox creates it directly in its background document.
 
-This avoids the previous whole-archive binary-string/base64/data-URL conversion, which multiplied memory usage and could terminate the browser on large image-heavy exports. The Chromium path has been live-tested with a roughly **160 MB** ZIP containing **75 attachments**.
+This avoids the previous whole-archive binary-string/base64/data-URL conversion, which multiplied memory usage and could terminate the browser on large image-heavy exports. Both the Chromium and Firefox paths have been live-tested with a roughly **160 MB** ZIP containing **75 attachments**.
 
 The ZIP itself is still assembled in memory, so very large exports can use several gigabytes of browser RAM while attachments are downloaded and the archive is built. Further streaming/memory optimization is possible if larger real-world exports require it.
 
@@ -107,7 +107,7 @@ Firefox support uses the same export, selection, rendering, attachment and ZIP c
 
 Release packaging is automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission and Firefox-specific Gecko metadata. The Firefox package targets Firefox 128 or later.
 
-Both packaged variants have been live-tested without manifest warnings. Firefox testing has covered normal export, selective-message export and attachment saving.
+Both packaged variants have been live-tested without manifest warnings. Firefox testing has covered normal export, selective-message export, attachment saving and a roughly 160 MB / 75-attachment stress test.
 
 ## Known limitations
 
@@ -116,7 +116,6 @@ Both packaged variants have been live-tested without manifest warnings. Firefox 
 - Audio transcription text shown by ChatGPT is not currently exported separately.
 - Shift-click range selection is limited to messages currently represented by the ChatGPT page DOM; full-branch selection itself is handled independently of DOM virtualization.
 - Very large exports are still assembled in memory and can require substantial RAM.
-- The Firefox download path has not yet received the same 160 MB stress test as Chromium.
 - Firefox packages from GitHub Releases are currently unsigned and therefore use Firefox's temporary add-on loading flow.
 
 ## Privacy
