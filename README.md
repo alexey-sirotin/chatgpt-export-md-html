@@ -29,29 +29,29 @@ Current version: **0.1.32**
 
 ## Installation
 
-There is currently no browser-store release. For development/testing:
+There is currently no browser-store release. Ready-to-use browser packages are attached to each GitHub Release.
 
 ### Chromium
 
-1. Clone or download this repository.
-2. Open `chrome://extensions` in Chrome, Vivaldi or another Chromium-based browser.
-3. Enable **Developer mode**.
-4. Click **Load unpacked**.
-5. Select the repository root — the directory containing `manifest.json`.
+1. Download `chatgpt-export-md-html-<version>-chromium.zip` from the latest GitHub Release.
+2. Unpack the archive.
+3. Open `chrome://extensions` in Chrome, Vivaldi or another Chromium-based browser.
+4. Enable **Developer mode**.
+5. Click **Load unpacked** and select the unpacked extension directory.
 6. Open or refresh a conversation on `https://chatgpt.com/`.
 7. Click the extension button in the browser toolbar.
 
-The repository-root manifest is intended for development. Release packaging removes Firefox-only manifest fields from the Chromium archive.
-
 ### Firefox
 
-Firefox 128 or later is supported. Build the browser packages with:
+Firefox 128 or later is supported.
 
-```bash
-bash scripts/package.sh
-```
+1. Download `chatgpt-export-md-html-<version>-firefox.zip` from the latest GitHub Release.
+2. Unpack the archive.
+3. Open `about:debugging`.
+4. Choose **This Firefox** → **Load Temporary Add-on…**.
+5. Select `manifest.json` from the unpacked extension directory.
 
-Unpack `dist/chatgpt-export-md-html-<version>-firefox.zip`, open `about:debugging`, choose **This Firefox** → **Load Temporary Add-on…**, and select the packaged `manifest.json`.
+The release archive is already packaged for Firefox; users do not need to run `scripts/package.sh`. Until the extension is distributed through Mozilla Add-ons or otherwise signed for Firefox, this installation is temporary and must be loaded again after restarting Firefox.
 
 ## Usage
 
@@ -117,6 +117,7 @@ Both packaged variants have been live-tested without manifest warnings. Firefox 
 - Shift-click range selection is limited to messages currently represented by the ChatGPT page DOM; full-branch selection itself is handled independently of DOM virtualization.
 - Very large exports are still assembled in memory and can require substantial RAM.
 - The Firefox download path has not yet received the same 160 MB stress test as Chromium.
+- Firefox packages from GitHub Releases are currently unsigned and therefore use Firefox's temporary add-on loading flow.
 
 ## Privacy
 
@@ -175,7 +176,7 @@ To build browser-specific archives locally on a Unix-like environment:
 bash scripts/package.sh
 ```
 
-The resulting archives are written to `dist/`.
+The resulting archives are written to `dist/`. This command is for development and release packaging; end users should download the already-built browser archive from GitHub Releases.
 
 For release packaging, pushing a tag such as `v0.1.32` runs the GitHub Actions packaging workflow. The workflow verifies that the tag matches the version in `manifest.json`, builds both browser archives and creates a **draft GitHub Release** with both ZIP files attached. The draft can then be reviewed and published manually, which keeps release immutability compatible with the packaging flow.
 
