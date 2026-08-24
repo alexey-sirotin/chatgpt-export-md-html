@@ -85,7 +85,38 @@
     };
   }
 
-  function reportCurrentIds() {
+  async function sendSeenIds(conversationId, ids, temporaryIds) {
+    return chrome.runtime.sendMessage({
+      type: 'SELECTION_INDEX_SEEN_IDS',
+      conversationId,
+      ids,
+      temporaryIds
+    });
+  }
+
+  async function probeIds(conversationId, ids, temporaryIds) {
+    for (const id of ids) {
+      const response = await sendSeenIds(conversationId, [id], []);
+      debug('probe-stable', { id, dirty: response?.dirty });
+      if (response?.dirty) {
+        debug('probe-first-dirty', { kind: 'stable', id });
+        return response;
+      }
+    }
+
+    for (const id of temporaryIds) {
+      const response = await sendSeenIds(conversationId, [], [id]);
+      debug('probe-temporary', { id, dirty: response?.dirty });
+      if (response?.dirty) {
+        debug('probe-first-dirty', { kind: 'temporary', id });
+        return response;
+      }
+    }
+
+    return { dirty: false };
+  }
+
+  async function reportCurrentIds() {
     if (!enabled) return;
     const snapshot = collectIds();
     if (!snapshot.conversationId) return;
@@ -117,20 +148,16 @@
       temporaryIds
     });
 
-    chrome.runtime.sendMessage({
-      type: 'SELECTION_INDEX_SEEN_IDS',
-      conversationId: snapshot.conversationId,
-      ids,
-      temporaryIds
-    }).then(response => {
+    try {
+      const response = await probeIds(snapshot.conversationId, ids, temporaryIds);
       debug('observer-response', {
         dirty: response?.dirty,
         stableCount: ids.length,
         temporaryCount: temporaryIds.length
       });
-    }).catch(error => {
+    } catch (error) {
       debug('observer-error', { message: error?.message || String(error) });
-    });
+    }
   }
 
   function scheduleReport() {
@@ -138,7 +165,7 @@
     refreshQueued = true;
     requestAnimationFrame(() => {
       refreshQueued = false;
-      reportCurrentIds();
+      void reportCurrentIds();
     });
   }
 
@@ -166,7 +193,7 @@
       ensureObserver();
       const snapshot = collectIds();
       debug('watch-enabled', summarizeSnapshot(snapshot));
-      reportCurrentIds();
+      void reportCurrentIds();
       respond({ ok: true });
       return;
     }
