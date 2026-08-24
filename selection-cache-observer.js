@@ -60,39 +60,47 @@
     const temporaryIds = new Set();
     const containers = document.querySelectorAll('[data-turn-id-container]');
 
-    // Mirror content.js selection identities and, crucially, only consider
-    // mounted/populated turns. ChatGPT keeps empty data-turn-id-container nodes
-    // around as virtualization placeholders; their stable-looking IDs are not
-    // evidence that the conversation changed and must not invalidate the cache.
+    // For cache validation prefer the final data-message-id whenever a mounted
+    // turn has one. ChatGPT's data-turn-id-container can be a UI/render identity
+    // that changes independently from the server conversation mapping, even
+    // while the actual message UUID remains stable. Reporting both identities
+    // produced false cache misses on otherwise unchanged chats.
     for (const container of containers) {
       const sourceTurnId = container.getAttribute('data-turn-id-container');
       if (!sourceTurnId || sourceTurnId === 'client-created-root') continue;
       if (!mountedContainerRoot(container, sourceTurnId)) continue;
 
       const messageId = stableMessageIdInContainer(container);
-      if (messageId) stableIds.add(messageId);
-
-      if (isTemporaryId(sourceTurnId)) {
-        if (!messageId) temporaryIds.add(sourceTurnId);
-      } else {
-        stableIds.add(sourceTurnId);
+      if (messageId) {
+        stableIds.add(messageId);
+        continue;
       }
+
+      // No final message UUID yet. An unresolved request-* definitely means the
+      // rendered conversation is changing, while a stable turn/container ID is
+      // the best fallback for image-only or future DOM variants without a
+      // data-message-id.
+      if (isTemporaryId(sourceTurnId)) temporaryIds.add(sourceTurnId);
+      else stableIds.add(sourceTurnId);
     }
 
     // Defensive fallback for a future DOM variant where mounted turns are no
-    // longer wrapped in data-turn-id-container. Ignore nested data-turn-id nodes
-    // already owned by a container so hydration-only internals do not count.
+    // longer wrapped in data-turn-id-container. As above, a stable message UUID
+    // wins over the surrounding turn ID.
     for (const el of document.querySelectorAll('[data-turn-id]')) {
       if (el.closest?.('[data-turn-id-container]')) continue;
       const turnId = el.getAttribute('data-turn-id');
       if (!turnId || turnId === 'client-created-root') continue;
       if (!mountedFallbackRoot(el) && !stableMessageIdInContainer(el)) continue;
 
-      if (isTemporaryId(turnId)) temporaryIds.add(turnId);
-      else stableIds.add(turnId);
-
       const messageId = stableMessageIdInContainer(el);
-      if (messageId) stableIds.add(messageId);
+      if (messageId) {
+        stableIds.add(messageId);
+      } else if (isTemporaryId(turnId)) {
+        temporaryIds.add(turnId);
+      } else {
+        stableIds.add(turnId);
+      }
     }
 
     return {
