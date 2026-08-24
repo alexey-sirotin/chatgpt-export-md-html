@@ -536,7 +536,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const exportJson = {
       schemaVersion: 1,
       exporter: "chatgpt2md",
-      exporterVersion: "0.1.31",
+      exporterVersion: chrome.runtime.getManifest().version,
       title: exportName,
       conversationId: data.conversation_id,
       ...(includeOriginalLink ? { conversationUrl } : {}),
