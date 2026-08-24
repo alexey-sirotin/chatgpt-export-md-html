@@ -4,6 +4,10 @@
   let refreshQueued = false;
   const reported = new Set();
 
+  function debug(event, details = {}) {
+    console.info('[chatgpt2md-cache]', event, details);
+  }
+
   function currentConversationId() {
     const match = location.pathname.match(/\/c\/([^/?#]+)/);
     return match ? decodeURIComponent(match[1]) : null;
@@ -71,6 +75,16 @@
     };
   }
 
+  function summarizeSnapshot(snapshot) {
+    return {
+      conversationId: snapshot.conversationId,
+      stableCount: snapshot.ids.length,
+      temporaryCount: snapshot.temporaryIds.length,
+      stableIds: snapshot.ids,
+      temporaryIds: snapshot.temporaryIds
+    };
+  }
+
   function reportCurrentIds() {
     if (!enabled) return;
     const snapshot = collectIds();
@@ -95,12 +109,28 @@
 
     if (!ids.length && !temporaryIds.length) return;
 
+    debug('observer-report', {
+      conversationId: snapshot.conversationId,
+      stableCount: ids.length,
+      temporaryCount: temporaryIds.length,
+      stableIds: ids,
+      temporaryIds
+    });
+
     chrome.runtime.sendMessage({
       type: 'SELECTION_INDEX_SEEN_IDS',
       conversationId: snapshot.conversationId,
       ids,
       temporaryIds
-    }).catch(() => {});
+    }).then(response => {
+      debug('observer-response', {
+        dirty: response?.dirty,
+        stableCount: ids.length,
+        temporaryCount: temporaryIds.length
+      });
+    }).catch(error => {
+      debug('observer-error', { message: error?.message || String(error) });
+    });
   }
 
   function scheduleReport() {
@@ -125,13 +155,17 @@
 
   chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (msg.type === 'GET_SELECTION_INDEX_IDS') {
-      respond(collectIds());
+      const snapshot = collectIds();
+      debug('snapshot-request', summarizeSnapshot(snapshot));
+      respond(snapshot);
       return;
     }
 
     if (msg.type === 'ENABLE_SELECTION_INDEX_WATCH') {
       enabled = true;
       ensureObserver();
+      const snapshot = collectIds();
+      debug('watch-enabled', summarizeSnapshot(snapshot));
       reportCurrentIds();
       respond({ ok: true });
       return;
