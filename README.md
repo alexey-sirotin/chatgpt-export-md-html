@@ -79,9 +79,9 @@ When attachment saving is disabled, Markdown and HTML still retain expected loca
 
 ### Large archives
 
-ZIP files are assembled in the extension service worker, then the completed archive buffer is transferred to an MV3 offscreen document. The offscreen document wraps it in a `Blob` and creates a temporary `blob:` URL; `chrome.downloads` then saves that URL normally.
+ZIP files are assembled in memory and saved through Blob/Object URLs instead of whole-archive base64 data URLs. Chromium creates the Blob/Object URL in an MV3 offscreen document, while Firefox can create it directly in its background document.
 
-This avoids the previous whole-archive binary-string/base64/data-URL conversion, which multiplied memory usage and could terminate the browser on large image-heavy exports. The current path has been live-tested with a roughly **160 MB** ZIP containing **75 attachments**.
+This avoids the previous whole-archive binary-string/base64/data-URL conversion, which multiplied memory usage and could terminate the browser on large image-heavy exports. The Chromium path has been live-tested with a roughly **160 MB** ZIP containing **75 attachments**.
 
 The ZIP itself is still assembled in memory, so very large exports can use several gigabytes of browser RAM while attachments are downloaded and the archive is built. Further streaming/memory optimization is possible if larger real-world exports require it.
 
@@ -108,7 +108,7 @@ The extension runs locally in the browser.
 
 It communicates with `chatgpt.com` only to read the current conversation and download files referenced by that conversation. It does not send conversation contents to third-party servers and contains no analytics or telemetry.
 
-Extension preferences and temporary per-session UI/cache state are stored using browser extension storage APIs. The offscreen document used for large downloads is part of the extension and does not contact an external service.
+Extension preferences and temporary per-session UI/cache state are stored using browser extension storage APIs. The offscreen document used by Chromium for large downloads is part of the extension and does not contact an external service.
 
 ## Project structure
 
