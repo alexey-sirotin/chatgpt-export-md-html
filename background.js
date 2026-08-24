@@ -357,7 +357,6 @@ async function enableSelectionIndexWatch(tabId) {
     // observer content script. Caching still works with TTL until then.
   }
 }
-
 function omissionBoundaries(rawBranch, selectedBranch) {
   const selectedNodes = new Set(selectedBranch);
   const groups = logicalSelectionGroups(rawBranch).filter(group =>
@@ -641,7 +640,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const exportJson = {
       schemaVersion: 1,
       exporter: "chatgpt2md",
-      exporterVersion: "0.1.30",
+      exporterVersion: "0.1.31",
       title: exportName,
       conversationId: data.conversation_id,
       ...(includeOriginalLink ? { conversationUrl } : {}),
