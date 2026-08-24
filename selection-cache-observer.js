@@ -26,40 +26,33 @@
     return messageId && !isTemporaryId(messageId) ? messageId : null;
   }
 
-  function describeIdInDom(id) {
-    const selector = [
-      `[data-message-id="${CSS.escape(id)}"]`,
-      `[data-turn-id="${CSS.escape(id)}"]`,
-      `[data-turn-id-container="${CSS.escape(id)}"]`
-    ].join(',');
+  function mountedFallbackRoot(container) {
+    if (!container) return null;
 
-    return [...document.querySelectorAll(selector)].map(el => {
-      const container = el.closest?.('[data-turn-id-container]') || null;
-      const messageEl = container?.matches?.('[data-message-id]')
-        ? container
-        : container?.querySelector?.('[data-message-id]') || null;
-      const roleEl = container?.querySelector?.('[data-message-author-role]') ||
-        (el.matches?.('[data-message-author-role]') ? el : null);
-      const testEl = container?.querySelector?.('[data-testid]') ||
-        (el.matches?.('[data-testid]') ? el : null);
+    const semantic = container.querySelector?.([
+      '[data-message-author-role]',
+      '[data-testid^="conversation-turn-"]',
+      '[data-conversation-screenshot-content]',
+      '.markdown',
+      'img',
+      'video',
+      'audio'
+    ].join(','));
+    if (semantic) return semantic.closest?.('[data-conversation-screenshot-content]') || semantic;
 
-      return {
-        tag: el.tagName,
-        matchedBy: [
-          el.getAttribute('data-message-id') === id ? 'data-message-id' : null,
-          el.getAttribute('data-turn-id') === id ? 'data-turn-id' : null,
-          el.getAttribute('data-turn-id-container') === id ? 'data-turn-id-container' : null
-        ].filter(Boolean),
-        messageId: el.getAttribute('data-message-id'),
-        turnId: el.getAttribute('data-turn-id'),
-        turnContainerId: el.getAttribute('data-turn-id-container'),
-        containerTurnId: container?.getAttribute('data-turn-id-container') || null,
-        containerMessageId: messageEl?.getAttribute('data-message-id') || null,
-        role: roleEl?.getAttribute('data-message-author-role') || null,
-        testId: testEl?.getAttribute('data-testid') || null,
-        text: (container?.innerText || el.innerText || '').trim().slice(0, 300)
-      };
-    });
+    if ((container.textContent || '').trim()) return container;
+    return null;
+  }
+
+  function mountedContainerRoot(container, sourceTurnId) {
+    if (!container) return null;
+
+    for (const candidate of container.querySelectorAll?.('[data-turn-id]') || []) {
+      if (candidate.getAttribute('data-turn-id') === sourceTurnId) return candidate;
+    }
+
+    if (stableMessageIdInContainer(container)) return container;
+    return mountedFallbackRoot(container);
   }
 
   function collectIds() {
@@ -67,22 +60,19 @@
     const temporaryIds = new Set();
     const containers = document.querySelectorAll('[data-turn-id-container]');
 
-    // Mirror content.js selection identities instead of treating every internal
-    // data-turn-id in ChatGPT's rendered subtree as a conversation identity.
-    // Nested/internal turn IDs can change during hydration and were causing the
-    // compact selection cache to invalidate even when the logical chat had not
-    // changed.
+    // Mirror content.js selection identities and, crucially, only consider
+    // mounted/populated turns. ChatGPT keeps empty data-turn-id-container nodes
+    // around as virtualization placeholders; their stable-looking IDs are not
+    // evidence that the conversation changed and must not invalidate the cache.
     for (const container of containers) {
       const sourceTurnId = container.getAttribute('data-turn-id-container');
       if (!sourceTurnId || sourceTurnId === 'client-created-root') continue;
+      if (!mountedContainerRoot(container, sourceTurnId)) continue;
 
       const messageId = stableMessageIdInContainer(container);
       if (messageId) stableIds.add(messageId);
 
       if (isTemporaryId(sourceTurnId)) {
-        // A request-* container is resolved as soon as the rendered message has
-        // its stable UUID. Only an actually unresolved request should dirty the
-        // cache.
         if (!messageId) temporaryIds.add(sourceTurnId);
       } else {
         stableIds.add(sourceTurnId);
@@ -90,13 +80,14 @@
     }
 
     // Defensive fallback for a future DOM variant where mounted turns are no
-    // longer wrapped in data-turn-id-container. This mirrors content.js's
-    // fallback and ignores data-turn-id nodes that already belong to a known
-    // container, avoiding hydration-only internal IDs.
+    // longer wrapped in data-turn-id-container. Ignore nested data-turn-id nodes
+    // already owned by a container so hydration-only internals do not count.
     for (const el of document.querySelectorAll('[data-turn-id]')) {
       if (el.closest?.('[data-turn-id-container]')) continue;
       const turnId = el.getAttribute('data-turn-id');
       if (!turnId || turnId === 'client-created-root') continue;
+      if (!mountedFallbackRoot(el) && !stableMessageIdInContainer(el)) continue;
+
       if (isTemporaryId(turnId)) temporaryIds.add(turnId);
       else stableIds.add(turnId);
 
@@ -121,6 +112,38 @@
     };
   }
 
+  function describeId(id) {
+    const selector = [
+      `[data-message-id="${CSS.escape(id)}"]`,
+      `[data-turn-id="${CSS.escape(id)}"]`,
+      `[data-turn-id-container="${CSS.escape(id)}"]`
+    ].join(',');
+
+    return [...document.querySelectorAll(selector)].map(el => {
+      const container = el.closest?.('[data-turn-id-container]') || el;
+      const matchedBy = [];
+      for (const attr of ['data-message-id', 'data-turn-id', 'data-turn-id-container']) {
+        if (el.getAttribute(attr) === id) matchedBy.push(attr);
+      }
+      return {
+        tag: el.tagName,
+        matchedBy,
+        messageId: el.getAttribute('data-message-id'),
+        turnId: el.getAttribute('data-turn-id'),
+        turnContainerId: el.getAttribute('data-turn-id-container'),
+        containerTurnId: container?.getAttribute?.('data-turn-id-container') || null,
+        containerMessageId: stableMessageIdInContainer(container),
+        role: el.getAttribute('data-message-author-role') ||
+          container?.querySelector?.('[data-message-author-role]')?.getAttribute('data-message-author-role') ||
+          null,
+        testId: el.getAttribute('data-testid') ||
+          container?.querySelector?.('[data-testid]')?.getAttribute('data-testid') ||
+          null,
+        text: (container?.innerText || el.innerText || '').trim().slice(0, 300)
+      };
+    });
+  }
+
   async function sendSeenIds(conversationId, ids, temporaryIds) {
     return chrome.runtime.sendMessage({
       type: 'SELECTION_INDEX_SEEN_IDS',
@@ -135,11 +158,7 @@
       const response = await sendSeenIds(conversationId, [id], []);
       debug('probe-stable', { id, dirty: response?.dirty });
       if (response?.dirty) {
-        debug('probe-first-dirty', {
-          kind: 'stable',
-          id,
-          dom: describeIdInDom(id)
-        });
+        debug('probe-first-dirty', { kind: 'stable', id, dom: describeId(id) });
         return response;
       }
     }
@@ -148,11 +167,7 @@
       const response = await sendSeenIds(conversationId, [], [id]);
       debug('probe-temporary', { id, dirty: response?.dirty });
       if (response?.dirty) {
-        debug('probe-first-dirty', {
-          kind: 'temporary',
-          id,
-          dom: describeIdInDom(id)
-        });
+        debug('probe-first-dirty', { kind: 'temporary', id, dom: describeId(id) });
         return response;
       }
     }
