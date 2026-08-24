@@ -26,6 +26,42 @@
     return messageId && !isTemporaryId(messageId) ? messageId : null;
   }
 
+  function describeIdInDom(id) {
+    const selector = [
+      `[data-message-id="${CSS.escape(id)}"]`,
+      `[data-turn-id="${CSS.escape(id)}"]`,
+      `[data-turn-id-container="${CSS.escape(id)}"]`
+    ].join(',');
+
+    return [...document.querySelectorAll(selector)].map(el => {
+      const container = el.closest?.('[data-turn-id-container]') || null;
+      const messageEl = container?.matches?.('[data-message-id]')
+        ? container
+        : container?.querySelector?.('[data-message-id]') || null;
+      const roleEl = container?.querySelector?.('[data-message-author-role]') ||
+        (el.matches?.('[data-message-author-role]') ? el : null);
+      const testEl = container?.querySelector?.('[data-testid]') ||
+        (el.matches?.('[data-testid]') ? el : null);
+
+      return {
+        tag: el.tagName,
+        matchedBy: [
+          el.getAttribute('data-message-id') === id ? 'data-message-id' : null,
+          el.getAttribute('data-turn-id') === id ? 'data-turn-id' : null,
+          el.getAttribute('data-turn-id-container') === id ? 'data-turn-id-container' : null
+        ].filter(Boolean),
+        messageId: el.getAttribute('data-message-id'),
+        turnId: el.getAttribute('data-turn-id'),
+        turnContainerId: el.getAttribute('data-turn-id-container'),
+        containerTurnId: container?.getAttribute('data-turn-id-container') || null,
+        containerMessageId: messageEl?.getAttribute('data-message-id') || null,
+        role: roleEl?.getAttribute('data-message-author-role') || null,
+        testId: testEl?.getAttribute('data-testid') || null,
+        text: (container?.innerText || el.innerText || '').trim().slice(0, 300)
+      };
+    });
+  }
+
   function collectIds() {
     const stableIds = new Set();
     const temporaryIds = new Set();
@@ -99,7 +135,11 @@
       const response = await sendSeenIds(conversationId, [id], []);
       debug('probe-stable', { id, dirty: response?.dirty });
       if (response?.dirty) {
-        debug('probe-first-dirty', { kind: 'stable', id });
+        debug('probe-first-dirty', {
+          kind: 'stable',
+          id,
+          dom: describeIdInDom(id)
+        });
         return response;
       }
     }
@@ -108,7 +148,11 @@
       const response = await sendSeenIds(conversationId, [], [id]);
       debug('probe-temporary', { id, dirty: response?.dirty });
       if (response?.dirty) {
-        debug('probe-first-dirty', { kind: 'temporary', id });
+        debug('probe-first-dirty', {
+          kind: 'temporary',
+          id,
+          dom: describeIdInDom(id)
+        });
         return response;
       }
     }
