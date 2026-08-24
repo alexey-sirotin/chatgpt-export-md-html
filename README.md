@@ -2,7 +2,7 @@
 
 A browser extension for exporting the current ChatGPT conversation branch to local Markdown, HTML and JSON files, with attachments saved alongside the export.
 
-Current public release: **0.1.31**
+Current version: **0.1.32**
 
 ## Features
 
