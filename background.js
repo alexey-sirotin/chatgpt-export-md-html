@@ -357,6 +357,7 @@ async function enableSelectionIndexWatch(tabId) {
     // observer content script. Caching still works with TTL until then.
   }
 }
+
 function omissionBoundaries(rawBranch, selectedBranch) {
   const selectedNodes = new Set(selectedBranch);
   const groups = logicalSelectionGroups(rawBranch).filter(group =>
