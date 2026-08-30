@@ -5,7 +5,7 @@ import {
   nodeExchangeIds
 } from "./conversation.js";
 
-export const SELECTION_INDEX_SCHEMA_VERSION = 2;
+export const SELECTION_INDEX_SCHEMA_VERSION = 3;
 
 function uniqueStrings(values) {
   return [...new Set(values.filter(Boolean).map(String))];
@@ -15,9 +15,9 @@ export function buildSelectionIndex(rawBranch) {
   const groups = logicalSelectionGroups(rawBranch)
     .filter(group => group.nodes.some(node => isVisibleMessage(node.message)))
     .map(group => ({
+      kind: group.kind,
       directIds: uniqueStrings(group.nodes.flatMap(node => nodeDirectIds(node))),
-      exchangeIds: uniqueStrings(group.nodes.flatMap(node => nodeExchangeIds(node))),
-      assistantAfterUserIds: uniqueStrings(group.afterUserIds || [])
+      exchangeIds: uniqueStrings(group.nodes.flatMap(node => nodeExchangeIds(node)))
     }));
 
   return {
@@ -31,8 +31,8 @@ function chosenGroupIndexes(index, selection) {
   const chosen = new Set();
   const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
   const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
-  const selectedAssistantAfterUserIds = new Set(
-    (selection.selectedAssistantAfterUserIds || []).map(String)
+  const selectedLegacyAfterMessageIds = new Set(
+    (selection.selectedLegacyAfterMessageIds || []).map(String)
   );
 
   const directMatches = id => {
@@ -47,11 +47,14 @@ function chosenGroupIndexes(index, selection) {
     for (const groupIndex of directMatches(id)) chosen.add(groupIndex);
   }
 
-  for (let i = 0; i < groups.length; i++) {
-    if ((groups[i].assistantAfterUserIds || []).some(id =>
-      selectedAssistantAfterUserIds.has(String(id))
-    )) {
-      chosen.add(i);
+  for (const anchorId of selectedLegacyAfterMessageIds) {
+    for (const groupIndex of directMatches(anchorId)) {
+      const group = groups[groupIndex];
+      if (group?.kind === "assistant") {
+        chosen.add(groupIndex);
+      } else if (group?.kind === "user" && groups[groupIndex + 1]?.kind === "assistant") {
+        chosen.add(groupIndex + 1);
+      }
     }
   }
 
@@ -82,7 +85,7 @@ export function selectionSummaryFromIndex(index, selection) {
     const excluded = chosenGroupIndexes(index, {
       selectedMessageIds: selection.excludedMessageIds || [],
       selectedTurnIds: selection.excludedTurnIds || [],
-      selectedAssistantAfterUserIds: selection.excludedAssistantAfterUserIds || []
+      selectedLegacyAfterMessageIds: selection.excludedLegacyAfterMessageIds || []
     });
     return { total, selected: Math.max(0, total - excluded.size) };
   }
@@ -98,7 +101,6 @@ export function selectionIndexKnownIds(index) {
   for (const group of index?.groups || []) {
     for (const id of group.directIds || []) out.add(String(id));
     for (const id of group.exchangeIds || []) out.add(String(id));
-    for (const id of group.assistantAfterUserIds || []) out.add(String(id));
   }
   return out;
 }

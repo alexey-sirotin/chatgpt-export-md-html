@@ -91,11 +91,7 @@ export function logicalSelectionGroups(rawBranch) {
 
     if (role === "user") {
       groups.push({ kind: "user", nodes: [node] });
-      assistantGroup = {
-        kind: "assistant",
-        nodes: [],
-        afterUserIds: nodeDirectIds(node).map(String)
-      };
+      assistantGroup = { kind: "assistant", nodes: [] };
       groups.push(assistantGroup);
       continue;
     }
@@ -112,8 +108,8 @@ export function logicalSelectionGroups(rawBranch) {
 export function selectedBranchFromRaw(rawBranch, selection) {
   const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
   const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
-  const selectedAssistantAfterUserIds = new Set(
-    (selection.selectedAssistantAfterUserIds || []).map(String)
+  const selectedLegacyAfterMessageIds = new Set(
+    (selection.selectedLegacyAfterMessageIds || []).map(String)
   );
   const groups = logicalSelectionGroups(rawBranch);
   const chosen = new Set();
@@ -130,14 +126,23 @@ export function selectedBranchFromRaw(rawBranch, selection) {
   }
 
   // Legacy image-only DOM turns can have an opaque render/container ID that
-  // never appears in the server mapping. In that case the content script sends
-  // the preceding user message ID as a stable logical-response anchor.
-  for (const group of groups) {
-    if (
-      group.kind === "assistant" &&
-      (group.afterUserIds || []).some(id => selectedAssistantAfterUserIds.has(String(id)))
-    ) {
-      chosen.add(group);
+  // never appears in the server mapping. The content script sends the nearest
+  // preceding stable message ID. Resolve that ID against the server groups:
+  // - after a user group => the following assistant response;
+  // - after an assistant node => that same logical assistant response.
+  for (const anchorId of selectedLegacyAfterMessageIds) {
+    for (let i = 0; i < groups.length; i++) {
+      const group = groups[i];
+      const matchesAnchor = group.nodes.some(node =>
+        nodeDirectIds(node).includes(anchorId)
+      );
+      if (!matchesAnchor) continue;
+
+      if (group.kind === "assistant") {
+        chosen.add(group);
+      } else if (group.kind === "user" && groups[i + 1]?.kind === "assistant") {
+        chosen.add(groups[i + 1]);
+      }
     }
   }
 
@@ -176,7 +181,7 @@ export function branchExcludingFromRaw(rawBranch, selection) {
   const excludedBranch = selectedBranchFromRaw(rawBranch, {
     selectedMessageIds: selection.excludedMessageIds || [],
     selectedTurnIds: selection.excludedTurnIds || [],
-    selectedAssistantAfterUserIds: selection.excludedAssistantAfterUserIds || []
+    selectedLegacyAfterMessageIds: selection.excludedLegacyAfterMessageIds || []
   });
   const excludedNodes = new Set(excludedBranch);
   return rawBranch.filter(node =>
@@ -210,8 +215,20 @@ export function isInternalToolInvocationText(text) {
     if (!value || Array.isArray(value) || typeof value !== "object") return false;
     const keys = Object.keys(value);
 
-    // Internal image_gen calls seen in conversation mapping. `prompt` is not
-    // guaranteed to be present (for example on an image edit/regeneration).
+    // Older image-gen turns stored only the serialized { size, n } call as an
+    // assistant message. It is internal plumbing, not conversational text.
+    if (
+      keys.length === 2 &&
+      Object.hasOwn(value, "size") &&
+      Object.hasOwn(value, "n") &&
+      typeof value.size === "string" &&
+      /^\d+x\d+$/i.test(value.size) &&
+      Number.isInteger(value.n) &&
+      value.n > 0
+    ) return true;
+
+    // Internal image_gen calls seen in newer conversation mapping. `prompt` is
+    // not guaranteed to be present (for example on an image edit/regeneration).
     const imageGenAllowed = new Set([
       "prompt", "size", "n", "transparent_background",
       "is_style_transfer", "referenced_image_ids"
