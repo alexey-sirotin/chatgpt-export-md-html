@@ -284,6 +284,8 @@ function visibleExportMessages(messages) {
 }
 
 function isImageAttachment(attachment) {
+  if (attachment?.isImage === true) return true;
+
   const mimeType = String(attachment?.mimeType || "").toLowerCase();
   if (mimeType.startsWith("image/")) return true;
 

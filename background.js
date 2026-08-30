@@ -490,6 +490,16 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
           }
         }
 
+        const hasKnownImageExtension = /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i
+          .test(resolvedOriginalName || "");
+        if (
+          a.isImage &&
+          (!resolvedMimeType || resolvedMimeType === "application/octet-stream") &&
+          !hasKnownImageExtension
+        ) {
+          resolvedMimeType = "image/png";
+        }
+
         const ext = extFromMime(resolvedMimeType, resolvedOriginalName || "");
         const fallbackName = `${String(idx).padStart(4,"0")}-${role}-${String(aidx).padStart(2,"0")}.${ext}`;
         const preferredName = filenameWithExtension(resolvedOriginalName, ext);
