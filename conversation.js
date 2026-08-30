@@ -110,12 +110,53 @@ export function logicalSelectionGroups(rawBranch) {
 export function selectedBranchFromRaw(rawBranch, selection) {
   const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
   const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
+  const legacyTurnContexts = new Map(
+    (selection.legacyTurnContexts || [])
+      .filter(context => context?.turnId)
+      .map(context => [String(context.turnId), context])
+  );
   const groups = logicalSelectionGroups(rawBranch);
   const chosen = new Set();
 
   const directGroupsFor = id => groups.filter(group =>
     group.nodes.some(node => nodeDirectIds(node).includes(id))
   );
+
+  const unambiguousLegacyGroupFor = id => {
+    const context = legacyTurnContexts.get(String(id));
+    if (!context?.prevMessageId || !context?.nextMessageId) return null;
+
+    const indexesForDirectId = directId => {
+      const indexes = [];
+      for (let i = 0; i < groups.length; i++) {
+        if (groups[i].nodes.some(node => nodeDirectIds(node).includes(String(directId)))) {
+          indexes.push(i);
+        }
+      }
+      return indexes;
+    };
+
+    const prevIndexes = indexesForDirectId(context.prevMessageId);
+    const nextIndexes = indexesForDirectId(context.nextMessageId);
+    if (prevIndexes.length !== 1 || nextIndexes.length !== 1) return null;
+
+    const prevIndex = prevIndexes[0];
+    const nextIndex = nextIndexes[0];
+    if (prevIndex >= nextIndex) return null;
+
+    const candidates = [];
+    for (let i = prevIndex + 1; i < nextIndex; i++) {
+      const group = groups[i];
+      if (
+        group.kind === "assistant" &&
+        group.nodes.some(node => isVisibleMessage(node.message))
+      ) {
+        candidates.push(group);
+      }
+    }
+
+    return candidates.length === 1 ? candidates[0] : null;
+  };
 
   // Message IDs are the strongest signal because they come directly from the
   // mounted DOM message. Selecting any node inside an assistant response selects
@@ -138,11 +179,20 @@ export function selectedBranchFromRaw(rawBranch, selection) {
       group.nodes.some(node => nodeExchangeIds(node).includes(id))
     );
 
-    // If a DOM message ID has already identified one of several groups sharing
-    // the same exchange ID, do not broaden the selection to its neighbors.
-    const alreadyChosen = exchangeMatches.filter(group => chosen.has(group));
-    const targets = alreadyChosen.length ? alreadyChosen : exchangeMatches;
-    for (const group of targets) chosen.add(group);
+    if (exchangeMatches.length) {
+      // If a DOM message ID has already identified one of several groups sharing
+      // the same exchange ID, do not broaden the selection to its neighbors.
+      const alreadyChosen = exchangeMatches.filter(group => chosen.has(group));
+      const targets = alreadyChosen.length ? alreadyChosen : exchangeMatches;
+      for (const group of targets) chosen.add(group);
+      continue;
+    }
+
+    // Last resort for truly orphaned legacy DOM turns. Never guess: if the two
+    // stable boundaries do not prove exactly one visible assistant group, keep
+    // the base selection state unchanged.
+    const legacyGroup = unambiguousLegacyGroupFor(id);
+    if (legacyGroup) chosen.add(legacyGroup);
   }
 
   const out = [];
@@ -158,7 +208,8 @@ export function selectedBranchFromRaw(rawBranch, selection) {
 export function branchExcludingFromRaw(rawBranch, selection) {
   const excludedBranch = selectedBranchFromRaw(rawBranch, {
     selectedMessageIds: selection.excludedMessageIds || [],
-    selectedTurnIds: selection.excludedTurnIds || []
+    selectedTurnIds: selection.excludedTurnIds || [],
+    legacyTurnContexts: selection.legacyTurnContexts || []
   });
   const excludedNodes = new Set(excludedBranch);
   return rawBranch.filter(node =>
