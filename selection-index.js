@@ -5,7 +5,7 @@ import {
   nodeExchangeIds
 } from "./conversation.js";
 
-export const SELECTION_INDEX_SCHEMA_VERSION = 4;
+export const SELECTION_INDEX_SCHEMA_VERSION = 2;
 
 function uniqueStrings(values) {
   return [...new Set(values.filter(Boolean).map(String))];
@@ -15,7 +15,6 @@ export function buildSelectionIndex(rawBranch) {
   const groups = logicalSelectionGroups(rawBranch)
     .filter(group => group.nodes.some(node => isVisibleMessage(node.message)))
     .map(group => ({
-      kind: group.kind,
       directIds: uniqueStrings(group.nodes.flatMap(node => nodeDirectIds(node))),
       exchangeIds: uniqueStrings(group.nodes.flatMap(node => nodeExchangeIds(node)))
     }));
@@ -31,7 +30,6 @@ function chosenGroupIndexes(index, selection) {
   const chosen = new Set();
   const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
   const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
-  const selectedLegacyRanges = (selection.selectedLegacyRanges || []).map(String);
 
   const directMatches = id => {
     const matches = [];
@@ -43,33 +41,6 @@ function chosenGroupIndexes(index, selection) {
 
   for (const id of selectedMessageIds) {
     for (const groupIndex of directMatches(id)) chosen.add(groupIndex);
-  }
-
-  for (const range of selectedLegacyRanges) {
-    const split = range.indexOf("|");
-    const prevId = split >= 0 ? range.slice(0, split) : range;
-    const nextId = split >= 0 ? range.slice(split + 1) : "";
-
-    const prevMatches = prevId ? directMatches(prevId) : [];
-    const nextMatches = nextId ? directMatches(nextId) : [];
-    const prevIndex = prevMatches.length ? prevMatches[prevMatches.length - 1] : null;
-    const nextIndex = nextMatches.length ? nextMatches[0] : null;
-
-    if (prevIndex == null && nextIndex == null) continue;
-
-    let lo = 0;
-    let hi = groups.length - 1;
-
-    if (prevIndex != null) {
-      lo = groups[prevIndex]?.kind === "assistant" ? prevIndex : prevIndex + 1;
-    }
-    if (nextIndex != null) {
-      hi = groups[nextIndex]?.kind === "assistant" ? nextIndex : nextIndex - 1;
-    }
-
-    for (let i = Math.max(0, lo); i <= Math.min(groups.length - 1, hi); i++) {
-      if (groups[i]?.kind === "assistant") chosen.add(i);
-    }
   }
 
   for (const id of selectedTurnIds) {
@@ -98,8 +69,7 @@ export function selectionSummaryFromIndex(index, selection) {
   if (selection.selectAll) {
     const excluded = chosenGroupIndexes(index, {
       selectedMessageIds: selection.excludedMessageIds || [],
-      selectedTurnIds: selection.excludedTurnIds || [],
-      selectedLegacyRanges: selection.excludedLegacyRanges || []
+      selectedTurnIds: selection.excludedTurnIds || []
     });
     return { total, selected: Math.max(0, total - excluded.size) };
   }

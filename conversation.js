@@ -78,7 +78,9 @@ export function nodeExchangeIds(node) {
     m.turn_exchange_id,
     m.turnExchangeId,
     m.turn_id,
-    m.turnId
+    m.turnId,
+    m.parent_id,
+    m.parentId
   ].filter(Boolean).map(String);
 }
 
@@ -108,7 +110,6 @@ export function logicalSelectionGroups(rawBranch) {
 export function selectedBranchFromRaw(rawBranch, selection) {
   const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
   const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
-  const selectedLegacyRanges = (selection.selectedLegacyRanges || []).map(String);
   const groups = logicalSelectionGroups(rawBranch);
   const chosen = new Set();
 
@@ -121,50 +122,6 @@ export function selectedBranchFromRaw(rawBranch, selection) {
   // the whole logical response, including its image/tool nodes.
   for (const id of selectedMessageIds) {
     for (const group of directGroupsFor(id)) chosen.add(group);
-  }
-
-  // Legacy image-only DOM turns can have an opaque render/container ID that
-  // never appears in the server mapping. The content script sends a pair
-  // "previousStableMessageId|nextStableMessageId". Resolve both boundaries to
-  // server groups and select only assistant groups inside that interval.
-  const groupIndexesForDirectId = id => {
-    if (!id) return [];
-    const indexes = [];
-    for (let i = 0; i < groups.length; i++) {
-      if (groups[i].nodes.some(node => nodeDirectIds(node).includes(id))) indexes.push(i);
-    }
-    return indexes;
-  };
-
-  for (const range of selectedLegacyRanges) {
-    const split = range.indexOf("|");
-    const prevId = split >= 0 ? range.slice(0, split) : range;
-    const nextId = split >= 0 ? range.slice(split + 1) : "";
-
-    const prevIndexes = groupIndexesForDirectId(prevId);
-    const nextIndexes = groupIndexesForDirectId(nextId);
-
-    // Stable IDs are expected to be unique. If one side is virtualized away or
-    // otherwise unavailable in the server mapping, retain a conservative
-    // one-sided adjacency fallback.
-    const prevIndex = prevIndexes.length ? prevIndexes[prevIndexes.length - 1] : null;
-    const nextIndex = nextIndexes.length ? nextIndexes[0] : null;
-
-    let lo = 0;
-    let hi = groups.length - 1;
-
-    if (prevIndex != null) {
-      lo = groups[prevIndex]?.kind === "assistant" ? prevIndex : prevIndex + 1;
-    }
-    if (nextIndex != null) {
-      hi = groups[nextIndex]?.kind === "assistant" ? nextIndex : nextIndex - 1;
-    }
-
-    if (prevIndex == null && nextIndex == null) continue;
-
-    for (let i = Math.max(0, lo); i <= Math.min(groups.length - 1, hi); i++) {
-      if (groups[i]?.kind === "assistant") chosen.add(groups[i]);
-    }
   }
 
   // Turn IDs are needed for virtualized/unmounted range selection. Prefer an
@@ -201,8 +158,7 @@ export function selectedBranchFromRaw(rawBranch, selection) {
 export function branchExcludingFromRaw(rawBranch, selection) {
   const excludedBranch = selectedBranchFromRaw(rawBranch, {
     selectedMessageIds: selection.excludedMessageIds || [],
-    selectedTurnIds: selection.excludedTurnIds || [],
-    selectedLegacyRanges: selection.excludedLegacyRanges || []
+    selectedTurnIds: selection.excludedTurnIds || []
   });
   const excludedNodes = new Set(excludedBranch);
   return rawBranch.filter(node =>

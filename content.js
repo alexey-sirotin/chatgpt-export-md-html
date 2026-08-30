@@ -2,10 +2,8 @@
   const t = (key) => chrome.i18n.getMessage(key) || key;
   const selectedTurnIds = new Set();
   const selectedMessageIds = new Set();
-  const selectedLegacyRangeKeys = new Set();
   const excludedTurnIds = new Set();
   const excludedMessageIds = new Set();
-  const excludedLegacyRangeKeys = new Set();
   let enabled = false;
   let anchorTurnId = null;
   let observer = null;
@@ -126,46 +124,6 @@
       seen.add(turnId);
     }
 
-    // The fallback pass above can append future DOM variants out of document
-    // order. Restore the real visual order before deriving legacy anchors.
-    out.sort((a, b) => {
-      if (a.container === b.container) return 0;
-      const pos = a.container.compareDocumentPosition(b.container);
-      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-      return 0;
-    });
-
-    // Legacy image-only turns can expose only an opaque DOM container ID that
-    // never appears in the server mapping. Give such a turn a pair of stable
-    // neighboring message IDs from the actual DOM order. The server can then
-    // identify the logical assistant response bounded by those two messages
-    // instead of guessing from one side only.
-    const stableMessageIds = out.map(turn => turnMessageId(turn));
-    let prevStableMessageId = null;
-    const nextStableByIndex = new Array(out.length).fill(null);
-    let nextStableMessageId = null;
-
-    for (let i = out.length - 1; i >= 0; i--) {
-      nextStableByIndex[i] = nextStableMessageId;
-      if (stableMessageIds[i]) nextStableMessageId = stableMessageIds[i];
-    }
-
-    for (let i = 0; i < out.length; i++) {
-      const turn = out[i];
-      const messageId = stableMessageIds[i];
-
-      if (messageId) {
-        prevStableMessageId = messageId;
-        continue;
-      }
-
-      if (prevStableMessageId || nextStableByIndex[i]) {
-        turn.legacyPrevMessageId = prevStableMessageId;
-        turn.legacyNextMessageId = nextStableByIndex[i];
-      }
-    }
-
     return out;
   }
 
@@ -184,23 +142,12 @@
       null;
   }
 
-  function legacyRangeKey(turn) {
-    const prev = turn?.legacyPrevMessageId || "";
-    const next = turn?.legacyNextMessageId || "";
-    return prev || next ? `${prev}|${next}` : null;
-  }
-
   function isTurnSelected(turn) {
     const mid = turnMessageId(turn);
-    const legacyKey = legacyRangeKey(turn);
     if (selectAllMode) {
-      return !excludedTurnIds.has(turn.turnId) &&
-        !(mid && excludedMessageIds.has(mid)) &&
-        !(legacyKey && excludedLegacyRangeKeys.has(legacyKey));
+      return !excludedTurnIds.has(turn.turnId) && !(mid && excludedMessageIds.has(mid));
     }
-    return selectedTurnIds.has(turn.turnId) ||
-      !!(mid && selectedMessageIds.has(mid)) ||
-      !!(legacyKey && selectedLegacyRangeKeys.has(legacyKey));
+    return selectedTurnIds.has(turn.turnId) || !!(mid && selectedMessageIds.has(mid));
   }
 
   function setTurnIdSelected(turnId, checked) {
@@ -215,22 +162,12 @@
   function setTurnSelected(turn, checked) {
     setTurnIdSelected(turn.turnId, checked);
     const mid = turnMessageId(turn);
-    const legacyKey = legacyRangeKey(turn);
+    if (!mid) return;
 
     if (selectAllMode) {
-      if (mid) checked ? excludedMessageIds.delete(mid) : excludedMessageIds.add(mid);
-      if (legacyKey) {
-        checked
-          ? excludedLegacyRangeKeys.delete(legacyKey)
-          : excludedLegacyRangeKeys.add(legacyKey);
-      }
+      checked ? excludedMessageIds.delete(mid) : excludedMessageIds.add(mid);
     } else {
-      if (mid) checked ? selectedMessageIds.add(mid) : selectedMessageIds.delete(mid);
-      if (legacyKey) {
-        checked
-          ? selectedLegacyRangeKeys.add(legacyKey)
-          : selectedLegacyRangeKeys.delete(legacyKey);
-      }
+      checked ? selectedMessageIds.add(mid) : selectedMessageIds.delete(mid);
     }
   }
 
@@ -378,10 +315,8 @@
       selectAllMode = true;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
-      selectedLegacyRangeKeys.clear();
       excludedTurnIds.clear();
       excludedMessageIds.clear();
-      excludedLegacyRangeKeys.clear();
       anchorTurnId = null;
       refreshMounted();
       respond(currentState());
@@ -392,10 +327,8 @@
       selectAllMode = false;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
-      selectedLegacyRangeKeys.clear();
       excludedTurnIds.clear();
       excludedMessageIds.clear();
-      excludedLegacyRangeKeys.clear();
       anchorTurnId = null;
       refreshMounted();
       respond(currentState());
@@ -408,10 +341,8 @@
         selectAll: selectAllMode,
         selectedTurnIds: [...selectedTurnIds],
         selectedMessageIds: [...selectedMessageIds],
-        selectedLegacyRanges: [...selectedLegacyRangeKeys],
         excludedTurnIds: [...excludedTurnIds],
         excludedMessageIds: [...excludedMessageIds],
-        excludedLegacyRanges: [...excludedLegacyRangeKeys],
         orderedIds: orderedTurnIds()
       });
       return;
@@ -422,10 +353,8 @@
       selectAllMode = true;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
-      selectedLegacyRangeKeys.clear();
       excludedTurnIds.clear();
       excludedMessageIds.clear();
-      excludedLegacyRangeKeys.clear();
       anchorTurnId = null;
       enabled = false;
       refreshMounted();
