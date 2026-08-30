@@ -88,7 +88,7 @@ The editable export name controls the ZIP filename, exported document filenames 
 
 Partial exports insert neutral omission markers at the beginning, between non-contiguous selected fragments, and at the end when appropriate. JSON records the same structure with `omittedBefore` and `omittedAfter` flags.
 
-When attachment saving is disabled, Markdown and HTML still retain expected local links so previously downloaded files can be placed beside the export later.
+When attachment saving is disabled, Markdown and HTML still use the same resolved attachment filenames and folder paths as a normal downloaded export; only the attachment bytes are omitted from the ZIP.
 
 ### Large archives
 

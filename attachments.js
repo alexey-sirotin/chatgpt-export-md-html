@@ -88,6 +88,38 @@ function extractFileId(value) {
   return null;
 }
 
+function recordLooksLikeImage(value) {
+  if (!value || typeof value !== "object") return false;
+
+  const mimeType = String(value.mime_type || value.mimeType || "").toLowerCase();
+  if (mimeType.startsWith("image/")) return true;
+
+  const structuralType = String(
+    value.content_type || value.contentType || value.type || ""
+  ).toLowerCase();
+  if (structuralType === "image_asset_pointer" || structuralType.startsWith("image/")) {
+    return true;
+  }
+
+  const source = String(value.source || "").toLowerCase();
+  if (source.includes("image")) return true;
+
+  for (const key of Object.keys(value)) {
+    if (/image_(?:asset_)?pointer|image_url|image_src/i.test(key)) return true;
+  }
+
+  const name =
+    value.name || value.filename || value.file_name ||
+    value.original_name || value.originalName || value.title || "";
+  if (/\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(String(name))) {
+    return true;
+  }
+
+  // ChatGPT image asset records normally retain pixel dimensions even when
+  // the backing file is no longer downloadable.
+  return Number.isFinite(Number(value.width)) && Number.isFinite(Number(value.height));
+}
+
 export function attachmentRecords(msg, safeUrls = []) {
   const byId = new Map();
 
@@ -120,7 +152,8 @@ export function attachmentRecords(msg, safeUrls = []) {
           width: a.width,
           height: a.height,
           source: a.source,
-          libraryFileId: a.library_file_id
+          libraryFileId: a.library_file_id,
+          ...(recordLooksLikeImage(a) ? { isImage: true } : {})
         });
       }
     }
@@ -153,14 +186,35 @@ export function attachmentRecords(msg, safeUrls = []) {
           obj.name || obj.filename || obj.file_name || obj.original_name || obj.originalName || obj.title ||
           obj.metadata?.name || obj.metadata?.filename || obj.metadata?.file_name ||
           obj.metadata?.original_name || obj.metadata?.originalName || obj.metadata?.title,
-        mimeType: obj.mime_type || obj.mimeType || obj.content_type,
+        mimeType:
+          obj.mime_type ||
+          obj.mimeType ||
+          (typeof obj.content_type === "string" && obj.content_type.includes("/")
+            ? obj.content_type
+            : null),
         size: obj.size || obj.size_bytes,
         width: obj.width,
         height: obj.height,
-        source: obj.source
+        source: obj.source,
+        ...(recordLooksLikeImage(obj) ? { isImage: true } : {})
       });
     }
   });
+
+  // Generated image titles live at message level rather than on the file
+  // record itself. Keep them as a fallback filename source so old chats still
+  // retain human-readable image names after the backing file has expired.
+  const imageGenTitle =
+    typeof msg.metadata?.image_gen_title === "string"
+      ? msg.metadata.image_gen_title.trim()
+      : "";
+  if (imageGenTitle) {
+    for (const [id, rec] of byId) {
+      if (rec.isImage && !rec.originalName) {
+        byId.set(id, { ...rec, originalName: imageGenTitle });
+      }
+    }
+  }
 
   // Any signed estuary URL in safe_urls is authoritative for its file id.
   for (const raw of safeUrls || []) {

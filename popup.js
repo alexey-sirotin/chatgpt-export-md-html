@@ -181,8 +181,7 @@ async function saveNames() {
 }
 
 function syncAttachmentOptionsUi() {
-  const saveAttachments = $("saveAttachments").checked;
-  $("separateAttachmentsFolder").disabled = !saveAttachments || !!exportStartedAt;
+  $("separateAttachmentsFolder").disabled = !!exportStartedAt;
 }
 
 function syncFormatOptionsUi() {
