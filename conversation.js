@@ -91,7 +91,11 @@ export function logicalSelectionGroups(rawBranch) {
 
     if (role === "user") {
       groups.push({ kind: "user", nodes: [node] });
-      assistantGroup = { kind: "assistant", nodes: [] };
+      assistantGroup = {
+        kind: "assistant",
+        nodes: [],
+        afterUserIds: nodeDirectIds(node).map(String)
+      };
       groups.push(assistantGroup);
       continue;
     }
@@ -108,6 +112,9 @@ export function logicalSelectionGroups(rawBranch) {
 export function selectedBranchFromRaw(rawBranch, selection) {
   const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
   const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
+  const selectedAssistantAfterUserIds = new Set(
+    (selection.selectedAssistantAfterUserIds || []).map(String)
+  );
   const groups = logicalSelectionGroups(rawBranch);
   const chosen = new Set();
 
@@ -120,6 +127,18 @@ export function selectedBranchFromRaw(rawBranch, selection) {
   // the whole logical response, including its image/tool nodes.
   for (const id of selectedMessageIds) {
     for (const group of directGroupsFor(id)) chosen.add(group);
+  }
+
+  // Legacy image-only DOM turns can have an opaque render/container ID that
+  // never appears in the server mapping. In that case the content script sends
+  // the preceding user message ID as a stable logical-response anchor.
+  for (const group of groups) {
+    if (
+      group.kind === "assistant" &&
+      (group.afterUserIds || []).some(id => selectedAssistantAfterUserIds.has(String(id)))
+    ) {
+      chosen.add(group);
+    }
   }
 
   // Turn IDs are needed for virtualized/unmounted range selection. Prefer an
@@ -156,7 +175,8 @@ export function selectedBranchFromRaw(rawBranch, selection) {
 export function branchExcludingFromRaw(rawBranch, selection) {
   const excludedBranch = selectedBranchFromRaw(rawBranch, {
     selectedMessageIds: selection.excludedMessageIds || [],
-    selectedTurnIds: selection.excludedTurnIds || []
+    selectedTurnIds: selection.excludedTurnIds || [],
+    selectedAssistantAfterUserIds: selection.excludedAssistantAfterUserIds || []
   });
   const excludedNodes = new Set(excludedBranch);
   return rawBranch.filter(node =>

@@ -5,7 +5,7 @@ import {
   nodeExchangeIds
 } from "./conversation.js";
 
-export const SELECTION_INDEX_SCHEMA_VERSION = 1;
+export const SELECTION_INDEX_SCHEMA_VERSION = 2;
 
 function uniqueStrings(values) {
   return [...new Set(values.filter(Boolean).map(String))];
@@ -16,7 +16,8 @@ export function buildSelectionIndex(rawBranch) {
     .filter(group => group.nodes.some(node => isVisibleMessage(node.message)))
     .map(group => ({
       directIds: uniqueStrings(group.nodes.flatMap(node => nodeDirectIds(node))),
-      exchangeIds: uniqueStrings(group.nodes.flatMap(node => nodeExchangeIds(node)))
+      exchangeIds: uniqueStrings(group.nodes.flatMap(node => nodeExchangeIds(node))),
+      assistantAfterUserIds: uniqueStrings(group.afterUserIds || [])
     }));
 
   return {
@@ -30,6 +31,9 @@ function chosenGroupIndexes(index, selection) {
   const chosen = new Set();
   const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
   const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
+  const selectedAssistantAfterUserIds = new Set(
+    (selection.selectedAssistantAfterUserIds || []).map(String)
+  );
 
   const directMatches = id => {
     const matches = [];
@@ -41,6 +45,14 @@ function chosenGroupIndexes(index, selection) {
 
   for (const id of selectedMessageIds) {
     for (const groupIndex of directMatches(id)) chosen.add(groupIndex);
+  }
+
+  for (let i = 0; i < groups.length; i++) {
+    if ((groups[i].assistantAfterUserIds || []).some(id =>
+      selectedAssistantAfterUserIds.has(String(id))
+    )) {
+      chosen.add(i);
+    }
   }
 
   for (const id of selectedTurnIds) {
@@ -69,7 +81,8 @@ export function selectionSummaryFromIndex(index, selection) {
   if (selection.selectAll) {
     const excluded = chosenGroupIndexes(index, {
       selectedMessageIds: selection.excludedMessageIds || [],
-      selectedTurnIds: selection.excludedTurnIds || []
+      selectedTurnIds: selection.excludedTurnIds || [],
+      selectedAssistantAfterUserIds: selection.excludedAssistantAfterUserIds || []
     });
     return { total, selected: Math.max(0, total - excluded.size) };
   }
@@ -85,6 +98,7 @@ export function selectionIndexKnownIds(index) {
   for (const group of index?.groups || []) {
     for (const id of group.directIds || []) out.add(String(id));
     for (const id of group.exchangeIds || []) out.add(String(id));
+    for (const id of group.assistantAfterUserIds || []) out.add(String(id));
   }
   return out;
 }

@@ -2,8 +2,10 @@
   const t = (key) => chrome.i18n.getMessage(key) || key;
   const selectedTurnIds = new Set();
   const selectedMessageIds = new Set();
+  const selectedAssistantAfterUserIds = new Set();
   const excludedTurnIds = new Set();
   const excludedMessageIds = new Set();
+  const excludedAssistantAfterUserIds = new Set();
   let enabled = false;
   let anchorTurnId = null;
   let observer = null;
@@ -52,6 +54,15 @@
     if (!el) return null;
     if (el.matches?.('[data-message-id]')) return el;
     return el.querySelector?.('[data-message-id]') || null;
+  }
+
+  function turnAuthorRole(turn) {
+    const roleEl =
+      turn?.root?.matches?.('[data-message-author-role]') ? turn.root :
+      turn?.root?.querySelector?.('[data-message-author-role]') ||
+      (turn?.container?.matches?.('[data-message-author-role]') ? turn.container : null) ||
+      turn?.container?.querySelector?.('[data-message-author-role]');
+    return roleEl?.getAttribute('data-message-author-role') || null;
   }
 
   function mountedFallbackRoot(container) {
@@ -124,6 +135,25 @@
       seen.add(turnId);
     }
 
+    // Legacy image-only turns can have a DOM-only data-turn-id-container that
+    // does not exist anywhere in the conversation mapping and no data-message-id
+    // at all. Anchor such a turn to the preceding user message, which is also
+    // how the server-side logical assistant groups are defined.
+    let lastUserId = null;
+    for (const turn of out) {
+      const role = turnAuthorRole(turn);
+      const messageId = turnMessageId(turn);
+
+      if (role === 'user') {
+        lastUserId = messageId || (validTurnId(turn.turnId) ? turn.turnId : null);
+        continue;
+      }
+
+      if (!messageId && lastUserId) {
+        turn.assistantAfterUserId = lastUserId;
+      }
+    }
+
     return out;
   }
 
@@ -144,10 +174,15 @@
 
   function isTurnSelected(turn) {
     const mid = turnMessageId(turn);
+    const assistantAfterUserId = turn.assistantAfterUserId || null;
     if (selectAllMode) {
-      return !excludedTurnIds.has(turn.turnId) && !(mid && excludedMessageIds.has(mid));
+      return !excludedTurnIds.has(turn.turnId) &&
+        !(mid && excludedMessageIds.has(mid)) &&
+        !(assistantAfterUserId && excludedAssistantAfterUserIds.has(assistantAfterUserId));
     }
-    return selectedTurnIds.has(turn.turnId) || !!(mid && selectedMessageIds.has(mid));
+    return selectedTurnIds.has(turn.turnId) ||
+      !!(mid && selectedMessageIds.has(mid)) ||
+      !!(assistantAfterUserId && selectedAssistantAfterUserIds.has(assistantAfterUserId));
   }
 
   function setTurnIdSelected(turnId, checked) {
@@ -162,12 +197,22 @@
   function setTurnSelected(turn, checked) {
     setTurnIdSelected(turn.turnId, checked);
     const mid = turnMessageId(turn);
-    if (!mid) return;
+    const assistantAfterUserId = turn.assistantAfterUserId || null;
 
     if (selectAllMode) {
-      checked ? excludedMessageIds.delete(mid) : excludedMessageIds.add(mid);
+      if (mid) checked ? excludedMessageIds.delete(mid) : excludedMessageIds.add(mid);
+      if (assistantAfterUserId) {
+        checked
+          ? excludedAssistantAfterUserIds.delete(assistantAfterUserId)
+          : excludedAssistantAfterUserIds.add(assistantAfterUserId);
+      }
     } else {
-      checked ? selectedMessageIds.add(mid) : selectedMessageIds.delete(mid);
+      if (mid) checked ? selectedMessageIds.add(mid) : selectedMessageIds.delete(mid);
+      if (assistantAfterUserId) {
+        checked
+          ? selectedAssistantAfterUserIds.add(assistantAfterUserId)
+          : selectedAssistantAfterUserIds.delete(assistantAfterUserId);
+      }
     }
   }
 
@@ -315,8 +360,10 @@
       selectAllMode = true;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
+      selectedAssistantAfterUserIds.clear();
       excludedTurnIds.clear();
       excludedMessageIds.clear();
+      excludedAssistantAfterUserIds.clear();
       anchorTurnId = null;
       refreshMounted();
       respond(currentState());
@@ -327,8 +374,10 @@
       selectAllMode = false;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
+      selectedAssistantAfterUserIds.clear();
       excludedTurnIds.clear();
       excludedMessageIds.clear();
+      excludedAssistantAfterUserIds.clear();
       anchorTurnId = null;
       refreshMounted();
       respond(currentState());
@@ -341,8 +390,10 @@
         selectAll: selectAllMode,
         selectedTurnIds: [...selectedTurnIds],
         selectedMessageIds: [...selectedMessageIds],
+        selectedAssistantAfterUserIds: [...selectedAssistantAfterUserIds],
         excludedTurnIds: [...excludedTurnIds],
         excludedMessageIds: [...excludedMessageIds],
+        excludedAssistantAfterUserIds: [...excludedAssistantAfterUserIds],
         orderedIds: orderedTurnIds()
       });
       return;
@@ -353,8 +404,10 @@
       selectAllMode = true;
       selectedTurnIds.clear();
       selectedMessageIds.clear();
+      selectedAssistantAfterUserIds.clear();
       excludedTurnIds.clear();
       excludedMessageIds.clear();
+      excludedAssistantAfterUserIds.clear();
       anchorTurnId = null;
       enabled = false;
       refreshMounted();
