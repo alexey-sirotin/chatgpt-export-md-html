@@ -201,6 +201,21 @@ export function attachmentRecords(msg, safeUrls = []) {
     }
   });
 
+  // Generated image titles live at message level rather than on the file
+  // record itself. Keep them as a fallback filename source so old chats still
+  // retain human-readable image names after the backing file has expired.
+  const imageGenTitle =
+    typeof msg.metadata?.image_gen_title === "string"
+      ? msg.metadata.image_gen_title.trim()
+      : "";
+  if (imageGenTitle) {
+    for (const [id, rec] of byId) {
+      if (rec.isImage && !rec.originalName) {
+        byId.set(id, { ...rec, originalName: imageGenTitle });
+      }
+    }
+  }
+
   // Any signed estuary URL in safe_urls is authoritative for its file id.
   for (const raw of safeUrls || []) {
     const url = String(raw).replaceAll("&amp;", "&");
