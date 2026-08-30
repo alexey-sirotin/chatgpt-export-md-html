@@ -404,7 +404,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (!exportMarkdown && !exportHtml && !exportJsonEnabled) throw new Error(t("chooseFormat"));
     const saveAttachments = msg.saveAttachments !== false;
     const separateAttachmentsFolder = msg.separateAttachmentsFolder !== false;
-    const folder = saveAttachments && separateAttachmentsFolder ? exportName : "";
+    const folder = separateAttachmentsFolder ? exportName : "";
     const mediaFiles = [];
     const usedMediaNames = new Set();
     const jsonMessages = [];
@@ -471,15 +471,22 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
               downloadError = String(e);
             }
           }
-        } else if (a.id && !resolvedOriginalName) {
+        } else if (
+          (a.id || a.source === "sandbox") &&
+          (!resolvedOriginalName || !a.mimeType || a.mimeType === "application/octet-stream")
+        ) {
           try {
             const info = await downloadAttachmentInPage(tabId, downloadRecord, true);
             resolvedOriginalName = info.originalName || resolvedOriginalName;
-            if (!a.mimeType && info.type) resolvedMimeType = info.type;
+            resolvedMimeType = info.type || resolvedMimeType;
             resolvedFileId = resolvedFileId || info.fileId || null;
             resolvedLibraryFileId = resolvedLibraryFileId || info.libraryFileId || null;
           } catch (e) {
-            console.warn("chatgpt2md: could not resolve attachment metadata", a.id, e);
+            console.warn(
+              "chatgpt2md: could not resolve attachment metadata",
+              a.id || a.sandboxPath || "",
+              e
+            );
           }
         }
 
@@ -487,7 +494,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         const fallbackName = `${String(idx).padStart(4,"0")}-${role}-${String(aidx).padStart(2,"0")}.${ext}`;
         const preferredName = filenameWithExtension(resolvedOriginalName, ext);
         const localName = uniqueFilename(preferredName, fallbackName, usedMediaNames);
-        const localPath = saveAttachments && folder ? `${folder}/${localName}` : localName;
+        const localPath = folder ? `${folder}/${localName}` : localName;
         const href = markdownHref(localPath);
 
         if (a.source === "sandbox" && a.sandboxUrl) {

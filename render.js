@@ -283,6 +283,16 @@ function visibleExportMessages(messages) {
   });
 }
 
+function isImageAttachment(attachment) {
+  const mimeType = String(attachment?.mimeType || "").toLowerCase();
+  if (mimeType.startsWith("image/")) return true;
+
+  // Metadata-only exports may occasionally get a filename before a useful MIME
+  // type. Preserve image rendering from the filename in that case.
+  const name = attachment?.originalName || attachment?.localName || attachment?.localPath || "";
+  return /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(name);
+}
+
 export function buildMarkdownExport({ title, conversationUrl, messages, includeOriginalLink = true }) {
   const md = [`# ${title}`, ""];
   if (includeOriginalLink && conversationUrl) {
@@ -313,7 +323,7 @@ export function buildMarkdownExport({ title, conversationUrl, messages, includeO
       if (a.source === "sandbox" || !a.localPath) continue;
 
       const href = markdownHref(a.localPath);
-      if ((a.mimeType || "").startsWith("image/")) {
+      if (isImageAttachment(a)) {
         const imageAlt = attachmentDisplayName(a, t("imageAttachment"));
         md.push(`[![${markdownLabel(imageAlt)}](${href})](${href})`, "");
       } else {
@@ -354,7 +364,7 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
       const href = escapeHtml(markdownHref(a.localPath));
       const originalLabel = a.originalName || a.title || null;
       const label = escapeHtml(attachmentDisplayName(a, a.localName || t("htmlAttachment")));
-      if ((a.mimeType || "").startsWith("image/")) {
+      if (isImageAttachment(a)) {
         return `<figure><a href="${href}"><img src="${href}" alt="${label}"></a>${originalLabel ? `<figcaption>${label}</figcaption>` : ""}</figure>`;
       }
       return `<p class="attachment"><a href="${href}">${label}</a></p>`;

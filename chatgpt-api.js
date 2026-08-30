@@ -212,19 +212,41 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
       discoveredName = discoveredName || filenameFromUrl(mediaUrl);
 
       if (metadataOnly) {
+        const applyResponseMetadata = response => {
+          discoveredName = discoveredName ||
+            filenameFromContentDisposition(response.headers.get("content-disposition")) ||
+            filenameFromUrl(response.url);
+          if (!discoveredType || discoveredType === "application/octet-stream") {
+            discoveredType = response.headers.get("content-type") || discoveredType || null;
+          }
+        };
+
         try {
           const headRes = await fetch(mediaUrl, {
             method: "HEAD",
             headers,
             credentials: "include"
           });
-          if (headRes.ok) {
-            discoveredName = discoveredName ||
-              filenameFromContentDisposition(headRes.headers.get("content-disposition")) ||
-              filenameFromUrl(headRes.url);
-            discoveredType = discoveredType || headRes.headers.get("content-type") || null;
-          }
+          if (headRes.ok) applyResponseMetadata(headRes);
         } catch {}
+
+        // Some attachment hosts omit Content-Disposition/Content-Type on HEAD.
+        // Probe only the first byte so metadata-only export can still use the
+        // same human-readable filename/type without downloading the attachment.
+        if (!discoveredName || !discoveredType || discoveredType === "application/octet-stream") {
+          let probeRes = null;
+          try {
+            probeRes = await fetch(mediaUrl, {
+              method: "GET",
+              headers: { ...headers, Range: "bytes=0-0" },
+              credentials: "include"
+            });
+            if (probeRes.ok) applyResponseMetadata(probeRes);
+          } catch {
+          } finally {
+            try { await probeRes?.body?.cancel(); } catch {}
+          }
+        }
 
         return {
           bytes: null,
