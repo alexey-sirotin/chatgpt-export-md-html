@@ -4,6 +4,7 @@
   const selectedMessageIds = new Set();
   const excludedTurnIds = new Set();
   const excludedMessageIds = new Set();
+  const legacyTurnContexts = new Map();
   let enabled = false;
   let anchorTurnId = null;
   let observer = null;
@@ -122,6 +123,48 @@
         messageId: messageEl?.getAttribute('data-message-id') || null
       });
       seen.add(turnId);
+    }
+
+    // Keep a conservative fallback context for legacy image-only turns that
+    // have no data-message-id. ChatGPT virtualizes the thread, so DOM neighbors
+    // are not authoritative by themselves; the background worker will use this
+    // pair only when it proves that exactly one visible assistant group exists
+    // between the two stable server messages.
+    const ordered = [...out].sort((a, b) => {
+      if (a.container === b.container) return 0;
+      const pos = a.container.compareDocumentPosition(b.container);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+    const messageIds = ordered.map(turn => turnMessageId(turn));
+    const nextStable = new Array(ordered.length).fill(null);
+    let nextMessageId = null;
+
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      nextStable[i] = nextMessageId;
+      if (messageIds[i]) nextMessageId = messageIds[i];
+    }
+
+    let previousMessageId = null;
+    for (let i = 0; i < ordered.length; i++) {
+      const turn = ordered[i];
+      const messageId = messageIds[i];
+
+      if (messageId) {
+        legacyTurnContexts.delete(turn.turnId);
+        previousMessageId = messageId;
+        continue;
+      }
+
+      const followingMessageId = nextStable[i];
+      if (previousMessageId && followingMessageId) {
+        legacyTurnContexts.set(turn.turnId, {
+          turnId: turn.turnId,
+          prevMessageId: previousMessageId,
+          nextMessageId: followingMessageId
+        });
+      }
     }
 
     return out;
@@ -337,12 +380,21 @@
 
     if (msg.type === 'GET_SELECTION') {
       refreshMounted();
+      const relevantTurnIds = new Set([
+        ...selectedTurnIds,
+        ...excludedTurnIds
+      ]);
+      const legacyContexts = [...relevantTurnIds]
+        .map(id => legacyTurnContexts.get(id))
+        .filter(Boolean);
+
       respond({
         selectAll: selectAllMode,
         selectedTurnIds: [...selectedTurnIds],
         selectedMessageIds: [...selectedMessageIds],
         excludedTurnIds: [...excludedTurnIds],
         excludedMessageIds: [...excludedMessageIds],
+        legacyTurnContexts: legacyContexts,
         orderedIds: orderedTurnIds()
       });
       return;
