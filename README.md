@@ -138,6 +138,7 @@ background.js                  Export orchestration, selection cache and downloa
 chatgpt-api.js                 ChatGPT session/API access and file resolution
 content.js                     Chat-page integration and message selection UI
 conversation.js                Conversation branch and message normalization
+dom-selection.js               Shared ChatGPT DOM turn/message detection helpers
 download-url.js                Cross-browser Blob/Object URL download helper
 offscreen.html                 Chromium MV3 offscreen document host
 offscreen.js                   Chromium Blob/Object URL creation for ZIP downloads

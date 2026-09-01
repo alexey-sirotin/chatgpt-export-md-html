@@ -42,6 +42,7 @@
         "https://chatgpt.com/*"
       ],
       "js": [
+        "dom-selection.js",
         "content.js",
         "selection-cache-observer.js"
       ],

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 const runtimeFiles = [
   "attachments.js", "background.js", "chatgpt-api.js", "content.js", "conversation.js",
-  "download-url.js", "offscreen.js", "popup.js", "render.js",
+  "dom-selection.js", "download-url.js", "offscreen.js", "popup.js", "render.js",
   "selection-cache-observer.js", "selection-index.js", "selection-matcher.js",
   "utils.js", "zip.js"
 ];

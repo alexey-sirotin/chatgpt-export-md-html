@@ -54,29 +54,35 @@ export function loadBrowserScript(path, {
   globalThis.requestAnimationFrame = requestAnimationFrame;
   window.requestAnimationFrame = requestAnimationFrame;
 
-  const source = readFileSync(resolve(process.cwd(), path), "utf8");
-  const execute = new Function(
-    "window",
-    "document",
-    "chrome",
-    "Node",
-    "MutationObserver",
-    "requestAnimationFrame",
-    "getComputedStyle",
-    "location",
-    source
-  );
+  const executeSource = source => {
+    const execute = new Function(
+      "window",
+      "document",
+      "chrome",
+      "Node",
+      "MutationObserver",
+      "requestAnimationFrame",
+      "getComputedStyle",
+      "location",
+      source
+    );
 
-  execute(
-    window,
-    document,
-    chromeMock,
-    window.Node,
-    PassiveMutationObserver,
-    requestAnimationFrame,
-    window.getComputedStyle.bind(window),
-    window.location
-  );
+    execute(
+      window,
+      document,
+      chromeMock,
+      window.Node,
+      PassiveMutationObserver,
+      requestAnimationFrame,
+      window.getComputedStyle.bind(window),
+      window.location
+    );
+  };
+
+  if (path !== "dom-selection.js") {
+    executeSource(readFileSync(resolve(process.cwd(), "dom-selection.js"), "utf8"));
+  }
+  executeSource(readFileSync(resolve(process.cwd(), path), "utf8"));
 
   const dispatch = message => {
     let response;
