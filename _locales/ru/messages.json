@@ -205,5 +205,35 @@
   },
   "formatJson": {
     "message": "JSON"
+  },
+  "defaultExportName": {
+    "message": "Экспорт ChatGPT"
+  },
+  "unknownError": {
+    "message": "Неизвестная ошибка"
+  },
+  "errorDownloadInterrupted": {
+    "message": "Загрузка прервана"
+  },
+  "errorConversationChanged": {
+    "message": "Чат изменился во время загрузки списка сообщений"
+  },
+  "errorCannotCreateDownloadObjectUrl": {
+    "message": "Этот браузер не может создать URL для загрузки архива"
+  },
+  "errorOffscreenUnavailable": {
+    "message": "Offscreen-документ создан, но его клиент недоступен"
+  },
+  "errorDownloadObjectUrlTimeout": {
+    "message": "Истекло время ожидания создания URL для ZIP-архива"
+  },
+  "errorCreateDownloadObjectUrl": {
+    "message": "Не удалось создать URL для ZIP-архива"
+  },
+  "errorReceiveDownloadObjectUrl": {
+    "message": "Не удалось получить URL для ZIP-архива"
+  },
+  "errorSandboxAttachmentContext": {
+    "message": "Для sandbox-вложения отсутствует контекст чата или сообщения"
   }
 }

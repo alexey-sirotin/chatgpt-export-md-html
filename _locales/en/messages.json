@@ -205,5 +205,35 @@
   },
   "formatJson": {
     "message": "JSON"
+  },
+  "defaultExportName": {
+    "message": "ChatGPT export"
+  },
+  "unknownError": {
+    "message": "Unknown error"
+  },
+  "errorDownloadInterrupted": {
+    "message": "Download interrupted"
+  },
+  "errorConversationChanged": {
+    "message": "Conversation changed while loading message list"
+  },
+  "errorCannotCreateDownloadObjectUrl": {
+    "message": "This browser cannot create a download object URL"
+  },
+  "errorOffscreenUnavailable": {
+    "message": "Offscreen document was created but its client is unavailable"
+  },
+  "errorDownloadObjectUrlTimeout": {
+    "message": "Timed out while creating ZIP Blob URL"
+  },
+  "errorCreateDownloadObjectUrl": {
+    "message": "Could not create ZIP Blob URL"
+  },
+  "errorReceiveDownloadObjectUrl": {
+    "message": "Could not receive ZIP Blob URL"
+  },
+  "errorSandboxAttachmentContext": {
+    "message": "Sandbox attachment is missing conversation or message context"
   }
 }

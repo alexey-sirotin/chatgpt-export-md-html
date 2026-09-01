@@ -1,3 +1,5 @@
+import { t } from "./utils.js";
+
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 let creatingOffscreenDocument = null;
 const localObjectUrls = new Set();
@@ -25,7 +27,7 @@ async function ensureOffscreenClient() {
   if (existing) return existing;
 
   if (!chrome.offscreen?.createDocument) {
-    throw new Error("This browser cannot create a download object URL");
+    throw new Error(t("errorCannotCreateDownloadObjectUrl"));
   }
 
   if (!creatingOffscreenDocument) {
@@ -56,7 +58,7 @@ async function ensureOffscreenClient() {
     await delay(25);
   }
 
-  throw new Error("Offscreen document was created but its client is unavailable");
+  throw new Error(t("errorOffscreenUnavailable"));
 }
 
 async function createOffscreenObjectUrl(bytes, mimeType) {
@@ -72,7 +74,7 @@ async function createOffscreenObjectUrl(bytes, mimeType) {
   const response = new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       channel.port1.close();
-      reject(new Error("Timed out while creating ZIP Blob URL"));
+      reject(new Error(t("errorDownloadObjectUrlTimeout")));
     }, 30000);
 
     channel.port1.onmessage = event => {
@@ -80,7 +82,7 @@ async function createOffscreenObjectUrl(bytes, mimeType) {
       channel.port1.close();
       const result = event.data || {};
       if (!result.ok || !result.url) {
-        reject(new Error(result.error || "Could not create ZIP Blob URL"));
+        reject(new Error(result.error || t("errorCreateDownloadObjectUrl")));
         return;
       }
       resolve(result.url);
@@ -89,7 +91,7 @@ async function createOffscreenObjectUrl(bytes, mimeType) {
     channel.port1.onmessageerror = () => {
       clearTimeout(timer);
       channel.port1.close();
-      reject(new Error("Could not receive ZIP Blob URL"));
+      reject(new Error(t("errorReceiveDownloadObjectUrl")));
     };
   });
 

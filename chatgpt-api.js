@@ -10,7 +10,7 @@ export async function getConversationInPage(tabId) {
       if (!m) throw new Error(errorConversationId);
       const conversationId = m[0];
 
-      const sessionCacheKey = "__chatgpt2mdSessionCache";
+      const sessionCacheKey = "__chatgptExportMdHtmlSessionCache";
       const cachedSession = globalThis[sessionCacheKey];
       let accessToken = cachedSession?.accessToken || null;
       if (!accessToken || Date.now() - Number(cachedSession?.updatedAt || 0) > 5 * 60 * 1000) {
@@ -41,10 +41,17 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
       attachment,
       metadataOnly,
       t("errorAttachmentId"),
-      t("errorDownloadUrl", attachment?.id || attachment?.sandboxPath || "")
+      t("errorDownloadUrl", attachment?.id || attachment?.sandboxPath || ""),
+      t("errorSandboxAttachmentContext")
     ],
-    func: async (attachment, metadataOnly, errorAttachmentId, errorDownloadUrl) => {
-      const sessionCacheKey = "__chatgpt2mdSessionCache";
+    func: async (
+      attachment,
+      metadataOnly,
+      errorAttachmentId,
+      errorDownloadUrl,
+      errorSandboxAttachmentContext
+    ) => {
+      const sessionCacheKey = "__chatgptExportMdHtmlSessionCache";
       const cachedSession = globalThis[sessionCacheKey];
       let accessToken = cachedSession?.accessToken || null;
       if (!accessToken || Date.now() - Number(cachedSession?.updatedAt || 0) > 5 * 60 * 1000) {
@@ -146,7 +153,7 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
         const conversationId = attachment?.conversationId;
         const messageId = attachment?.messageId;
         if (!conversationId || !messageId) {
-          throw new Error("sandbox attachment is missing conversationId/messageId");
+          throw new Error(errorSandboxAttachmentContext);
         }
 
         const qs = new URLSearchParams({

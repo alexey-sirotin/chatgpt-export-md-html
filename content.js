@@ -219,11 +219,11 @@
     if (!validTurnId(turnId)) return;
 
     const host = checkboxHost(turn);
-    if (!host || turn.container.querySelector?.('.chatgpt2md-select')) return;
+    if (!host || turn.container.querySelector?.('.chatgpt-export-select')) return;
 
     const box = document.createElement('input');
     box.type = 'checkbox';
-    box.className = 'chatgpt2md-select';
+    box.className = 'chatgpt-export-select';
     box.checked = isTurnSelected(turn);
     const selectionLabel = t('selectMessageForExport');
     box.title = selectionLabel;
@@ -283,8 +283,8 @@
       if (enabled) addCheckbox(turn);
 
       const host = checkboxHost(turn);
-      const box = turn.container.querySelector?.('.chatgpt2md-select') ||
-        host?.querySelector(':scope > .chatgpt2md-select');
+      const box = turn.container.querySelector?.('.chatgpt-export-select') ||
+        host?.querySelector(':scope > .chatgpt-export-select');
       const checked = isTurnSelected(turn);
       if (box) {
         box.checked = checked;

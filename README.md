@@ -146,6 +146,7 @@ popup.js                       Popup behavior
 render.js                      Markdown/HTML rendering
 selection-cache-observer.js    Lightweight page observer for selection-cache invalidation
 selection-index.js             Compact logical message-selection index
+selection-matcher.js           Shared direct/exchange/legacy selection matcher
 tests/                         Vitest unit and regression tests
 utils.js                       Shared helpers
 zip.js                         ZIP writer
