@@ -31,7 +31,7 @@ copy_tracked_files() {
   local target="$1"
   while IFS= read -r path; do
     case "$path" in
-      .github/*|scripts/*|README.md|LICENSE|.gitignore)
+      .github/*|scripts/*|tests/*|package.json|package-lock.json|README.md|LICENSE|.gitignore)
         continue
         ;;
     esac

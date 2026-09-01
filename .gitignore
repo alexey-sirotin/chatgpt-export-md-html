@@ -19,3 +19,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local unit-test dependencies and coverage
+node_modules/
+coverage/

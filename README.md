@@ -146,6 +146,7 @@ popup.js                       Popup behavior
 render.js                      Markdown/HTML rendering
 selection-cache-observer.js    Lightweight page observer for selection-cache invalidation
 selection-index.js             Compact logical message-selection index
+tests/                         Vitest unit and regression tests
 utils.js                       Shared helpers
 zip.js                         ZIP writer
 manifest.json                  Manifest V3 development manifest
@@ -165,7 +166,16 @@ Vibe-coded with ChatGPT.
 
 Requirements, product decisions and real-world testing by the author; architecture, implementation, debugging and refactoring developed collaboratively with ChatGPT.
 
-The project uses plain JavaScript and Manifest V3 with no build system or runtime dependencies.
+The project uses plain JavaScript and Manifest V3 with no build system or runtime dependencies. Vitest is used only as a development dependency for unit and regression tests.
+
+To install the test dependency and run the suite locally:
+
+```bash
+npm install
+npm test
+```
+
+The tests focus first on pure export logic: message selection, legacy image-response matching, attachment normalization, rendering and shared filename/path helpers. Pull requests run the unit suite before browser packaging, so regressions block a green packaging check.
 
 For local Chromium development, edit the files in the repository and click **Reload** for the extension on `chrome://extensions`. Refresh the open ChatGPT page after changes to content scripts such as `content.js` or `selection-cache-observer.js`.
 
