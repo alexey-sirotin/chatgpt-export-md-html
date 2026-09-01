@@ -1,5 +1,6 @@
 import { markdownLabel } from "./utils.js";
 import { attachmentRecords } from "./attachments.js";
+import { chosenSelectionGroupIndexes } from "./selection-matcher.js";
 
 export function isModelCaptionToolMessage(msg) {
   if (!msg || msg.author?.role !== "tool") return false;
@@ -108,97 +109,22 @@ export function logicalSelectionGroups(rawBranch) {
 }
 
 export function selectedBranchFromRaw(rawBranch, selection) {
-  const selectedMessageIds = new Set((selection.selectedMessageIds || []).map(String));
-  const selectedTurnIds = new Set((selection.selectedTurnIds || []).map(String));
-  const legacyTurnContexts = new Map(
-    (selection.legacyTurnContexts || [])
-      .filter(context => context?.turnId)
-      .map(context => [String(context.turnId), context])
-  );
   const groups = logicalSelectionGroups(rawBranch);
-  const chosen = new Set();
+  const descriptors = groups.map(group => ({
+    kind: group.kind,
+    directIds: [...new Set(group.nodes.flatMap(node => nodeDirectIds(node)).map(String))],
+    exchangeIds: [...new Set(group.nodes.flatMap(node => nodeExchangeIds(node)).map(String))],
+    visible: group.nodes.some(node => isVisibleMessage(node.message))
+  }));
 
-  const directGroupsFor = id => groups.filter(group =>
-    group.nodes.some(node => nodeDirectIds(node).includes(id))
-  );
-
-  const unambiguousLegacyGroupFor = id => {
-    const context = legacyTurnContexts.get(String(id));
-    if (!context?.prevMessageId || !context?.nextMessageId) return null;
-
-    const indexesForDirectId = directId => {
-      const indexes = [];
-      for (let i = 0; i < groups.length; i++) {
-        if (groups[i].nodes.some(node => nodeDirectIds(node).includes(String(directId)))) {
-          indexes.push(i);
-        }
-      }
-      return indexes;
-    };
-
-    const prevIndexes = indexesForDirectId(context.prevMessageId);
-    const nextIndexes = indexesForDirectId(context.nextMessageId);
-    if (prevIndexes.length !== 1 || nextIndexes.length !== 1) return null;
-
-    const prevIndex = prevIndexes[0];
-    const nextIndex = nextIndexes[0];
-    if (prevIndex >= nextIndex) return null;
-
-    const candidates = [];
-    for (let i = prevIndex + 1; i < nextIndex; i++) {
-      const group = groups[i];
-      if (
-        group.kind === "assistant" &&
-        group.nodes.some(node => isVisibleMessage(node.message))
-      ) {
-        candidates.push(group);
-      }
-    }
-
-    return candidates.length === 1 ? candidates[0] : null;
-  };
-
-  // Message IDs are the strongest signal because they come directly from the
-  // mounted DOM message. Selecting any node inside an assistant response selects
-  // the whole logical response, including its image/tool nodes.
-  for (const id of selectedMessageIds) {
-    for (const group of directGroupsFor(id)) chosen.add(group);
-  }
-
-  // Turn IDs are needed for virtualized/unmounted range selection. Prefer an
-  // exact node/message match. Only if that is unavailable, fall back to the
-  // exchange ID carried by ChatGPT's internal nodes.
-  for (const id of selectedTurnIds) {
-    const direct = directGroupsFor(id);
-    if (direct.length) {
-      for (const group of direct) chosen.add(group);
-      continue;
-    }
-
-    const exchangeMatches = groups.filter(group =>
-      group.nodes.some(node => nodeExchangeIds(node).includes(id))
-    );
-
-    if (exchangeMatches.length) {
-      // If a DOM message ID has already identified one of several groups sharing
-      // the same exchange ID, do not broaden the selection to its neighbors.
-      const alreadyChosen = exchangeMatches.filter(group => chosen.has(group));
-      const targets = alreadyChosen.length ? alreadyChosen : exchangeMatches;
-      for (const group of targets) chosen.add(group);
-      continue;
-    }
-
-    // Last resort for truly orphaned legacy DOM turns. Never guess: if the two
-    // stable boundaries do not prove exactly one visible assistant group, keep
-    // the base selection state unchanged.
-    const legacyGroup = unambiguousLegacyGroupFor(id);
-    if (legacyGroup) chosen.add(legacyGroup);
-  }
+  const chosenIndexes = chosenSelectionGroupIndexes(descriptors, selection, {
+    isLegacyCandidate: group => group?.kind === "assistant" && group.visible === true
+  });
 
   const out = [];
-  for (const group of groups) {
-    if (!chosen.has(group)) continue;
-    for (const node of group.nodes) {
+  for (let i = 0; i < groups.length; i++) {
+    if (!chosenIndexes.has(i)) continue;
+    for (const node of groups[i].nodes) {
       if (isVisibleMessage(node.message)) out.push(node);
     }
   }
