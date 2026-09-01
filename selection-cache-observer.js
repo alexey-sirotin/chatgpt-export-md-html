@@ -1,4 +1,14 @@
 (() => {
+  const dom = globalThis.ChatGPTExportDomSelection;
+  if (!dom) throw new Error("ChatGPTExportDomSelection is not loaded");
+
+  const {
+    isTemporaryId,
+    stableMessageIdInElement,
+    matchingTurnRoot,
+    mountedFallbackRoot
+  } = dom;
+
   let enabled = false;
   let observer = null;
   let refreshQueued = false;
@@ -9,45 +19,13 @@
     return match ? decodeURIComponent(match[1]) : null;
   }
 
-  function isTemporaryId(value) {
-    return !!value && value.startsWith('request-');
-  }
-
-  function stableMessageIdInContainer(container) {
-    if (!container) return null;
-    const messageEl = container.matches?.('[data-message-id]')
-      ? container
-      : container.querySelector?.('[data-message-id]');
-    const messageId = messageEl?.getAttribute('data-message-id') || null;
-    return messageId && !isTemporaryId(messageId) ? messageId : null;
-  }
-
-  function mountedFallbackRoot(container) {
-    if (!container) return null;
-
-    const semantic = container.querySelector?.([
-      '[data-message-author-role]',
-      '[data-testid^="conversation-turn-"]',
-      '[data-conversation-screenshot-content]',
-      '.markdown',
-      'img',
-      'video',
-      'audio'
-    ].join(','));
-    if (semantic) return semantic.closest?.('[data-conversation-screenshot-content]') || semantic;
-
-    if ((container.textContent || '').trim()) return container;
-    return null;
-  }
-
   function mountedContainerRoot(container, sourceTurnId) {
     if (!container) return null;
 
-    for (const candidate of container.querySelectorAll?.('[data-turn-id]') || []) {
-      if (candidate.getAttribute('data-turn-id') === sourceTurnId) return candidate;
-    }
+    const matchingRoot = matchingTurnRoot(container, sourceTurnId);
+    if (matchingRoot) return matchingRoot;
 
-    if (stableMessageIdInContainer(container)) return container;
+    if (stableMessageIdInElement(container)) return container;
     return mountedFallbackRoot(container);
   }
 
@@ -66,7 +44,7 @@
       if (!sourceTurnId || sourceTurnId === 'client-created-root') continue;
       if (!mountedContainerRoot(container, sourceTurnId)) continue;
 
-      const messageId = stableMessageIdInContainer(container);
+      const messageId = stableMessageIdInElement(container);
       if (messageId) {
         stableIds.add(messageId);
         continue;
@@ -86,9 +64,9 @@
       if (el.closest?.('[data-turn-id-container]')) continue;
       const turnId = el.getAttribute('data-turn-id');
       if (!turnId || turnId === 'client-created-root') continue;
-      if (!mountedFallbackRoot(el) && !stableMessageIdInContainer(el)) continue;
+      if (!mountedFallbackRoot(el) && !stableMessageIdInElement(el)) continue;
 
-      const messageId = stableMessageIdInContainer(el);
+      const messageId = stableMessageIdInElement(el);
       if (messageId) {
         stableIds.add(messageId);
       } else if (isTemporaryId(turnId)) {

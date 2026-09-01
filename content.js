@@ -1,5 +1,16 @@
 (() => {
+  const dom = globalThis.ChatGPTExportDomSelection;
+  if (!dom) throw new Error("ChatGPTExportDomSelection is not loaded");
+
   const t = (key) => chrome.i18n.getMessage(key) || key;
+  const {
+    isTemporaryId,
+    isStableId: validTurnId,
+    selfOrDescendantWithMessageId,
+    stableMessageIdInElement,
+    matchingTurnRoot,
+    mountedFallbackRoot
+  } = dom;
   const selectedTurnIds = new Set();
   const selectedMessageIds = new Set();
   const excludedTurnIds = new Set();
@@ -10,10 +21,6 @@
   let observer = null;
   let refreshQueued = false;
   let selectAllMode = true;
-
-  function validTurnId(id) {
-    return !!id && id !== 'client-created-root' && !id.startsWith('request-');
-  }
 
   function containerSelectionIdentity(container) {
     if (!container) return null;
@@ -28,8 +35,8 @@
     // rendered message already has its final UUID in data-message-id. Treat that
     // real message ID as the selection identity. Empty request placeholders have
     // no data-message-id and remain ignored.
-    if (sourceTurnId?.startsWith('request-')) {
-      const messageId = selfOrDescendantWithMessageId(container)?.getAttribute('data-message-id') || null;
+    if (isTemporaryId(sourceTurnId)) {
+      const messageId = stableMessageIdInElement(container);
       if (validTurnId(messageId)) return { turnId: messageId, sourceTurnId };
     }
 
@@ -49,37 +56,6 @@
     return [...new Set(allTurnContainers().map(item => item.turnId))];
   }
 
-  function selfOrDescendantWithMessageId(el) {
-    if (!el) return null;
-    if (el.matches?.('[data-message-id]')) return el;
-    return el.querySelector?.('[data-message-id]') || null;
-  }
-
-  function mountedFallbackRoot(container) {
-    if (!container) return null;
-
-    // Fresh assistant replies can appear in the live SPA before ChatGPT adds
-    // data-turn-id/data-message-id to their inner markup. Detect rendered
-    // conversational content without treating empty virtualization placeholders
-    // as mounted messages.
-    const semantic = container.querySelector?.([
-      '[data-message-author-role]',
-      '[data-testid^="conversation-turn-"]',
-      '[data-conversation-screenshot-content]',
-      '.markdown',
-      'img',
-      'video',
-      'audio'
-    ].join(','));
-    if (semantic) return semantic.closest?.('[data-conversation-screenshot-content]') || semantic;
-
-    // Text-only freshly appended turns may temporarily have none of the stable
-    // attributes above. Virtualized placeholders observed so far are empty, so
-    // non-whitespace text is a useful final fallback.
-    if ((container.textContent || '').trim()) return container;
-    return null;
-  }
-
   function populatedTurns() {
     const out = [];
     const seen = new Set();
@@ -93,14 +69,8 @@
       // though data-message-id already contains the final UUID. Match the DOM
       // root by its source turn ID, while using the final message UUID as our
       // selection identity.
-      let root = null;
-      for (const candidate of container.querySelectorAll('[data-turn-id]')) {
-        if (candidate.getAttribute('data-turn-id') === sourceTurnId) {
-          root = candidate;
-          break;
-        }
-      }
-      root ||= mountedFallbackRoot(container);
+      const root = matchingTurnRoot(container, sourceTurnId) ||
+        mountedFallbackRoot(container);
       if (!root) continue; // genuine virtualized placeholder
 
       const messageEl = selfOrDescendantWithMessageId(root) || selfOrDescendantWithMessageId(container);
