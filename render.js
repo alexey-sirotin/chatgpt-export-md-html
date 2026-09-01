@@ -24,7 +24,7 @@ function inlineMarkdownToHtml(text) {
   const tokens = [];
 
   const stash = html => {
-    const token = `@@CHATGPT2MD_INLINE_${tokens.length}@@`;
+    const token = `@@CHATGPT_EXPORT_INLINE_${tokens.length}@@`;
     tokens.push(html);
     return token;
   };
@@ -45,7 +45,7 @@ function inlineMarkdownToHtml(text) {
   out = out.replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
 
   tokens.forEach((html, i) => {
-    out = out.replaceAll(`@@CHATGPT2MD_INLINE_${i}@@`, html);
+    out = out.replaceAll(`@@CHATGPT_EXPORT_INLINE_${i}@@`, html);
   });
   return out;
 }

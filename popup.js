@@ -271,7 +271,7 @@ async function init() {
   try {
     const info = await send("GET_INFO");
     originalConversationTitle = info.title || "";
-    const defaultExportName = originalConversationTitle || "ChatGPT export";
+    const defaultExportName = originalConversationTitle || t("defaultExportName");
     const draftExportName = await loadExportNameDraft();
     $("name").value = draftExportName ?? defaultExportName;
     applyLocalSelectionState(info);
@@ -390,7 +390,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (msg.ok) {
       void clearExportNameDraft().finally(() => window.close());
     } else {
-      $("status").textContent = t("errorPrefix", msg.error || "Unknown error");
+      $("status").textContent = t("errorPrefix", msg.error || t("unknownError"));
     }
   }
 });

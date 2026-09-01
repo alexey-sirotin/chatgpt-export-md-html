@@ -55,7 +55,7 @@ function waitForDownloadCompletion(downloadId) {
         return;
       }
       if (delta.error?.current || delta.state?.current === "interrupted") {
-        finish(new Error(delta.error?.current || "Download interrupted"));
+        finish(new Error(delta.error?.current || t("errorDownloadInterrupted")));
       }
     };
 
@@ -67,7 +67,7 @@ function waitForDownloadCompletion(downloadId) {
       const item = items?.[0];
       if (!item || settled) return;
       if (item.state === "complete") finish();
-      else if (item.state === "interrupted") finish(new Error(item.error || "Download interrupted"));
+      else if (item.state === "interrupted") finish(new Error(item.error || t("errorDownloadInterrupted")));
     }).catch(() => {});
   });
 }
@@ -83,7 +83,7 @@ async function storeExportProgress(tabId, state) {
   try {
     await chrome.storage.session.set({ [exportProgressKey(tabId)]: state });
   } catch (e) {
-    console.warn("chatgpt2md: could not persist export progress", e);
+    console.warn("chatgpt-export-md-html: could not persist export progress", e);
   }
 }
 
@@ -184,7 +184,7 @@ async function persistSelectionIndexRecord(conversationId, record) {
   try {
     await chrome.storage.session.set({ [selectionIndexKey(conversationId)]: record });
   } catch (e) {
-    console.warn("chatgpt2md: could not persist selection index", e);
+    console.warn("chatgpt-export-md-html: could not persist selection index", e);
   }
 }
 
@@ -330,7 +330,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (!index) {
       const data = await getConversationInPage(msg.tabId);
       if (msg.conversationId && data.conversation_id !== msg.conversationId) {
-        throw new Error("Conversation changed while loading message list");
+        throw new Error(t("errorConversationChanged"));
       }
       const rawBranch = rawBranchFromCurrent(data);
       index = buildSelectionIndex(rawBranch);
@@ -455,7 +455,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
         if (saveAttachments) {
           if (!a.id && a.source !== "sandbox") {
-            downloadError = "attachment.id is missing";
+            downloadError = t("errorAttachmentId");
           } else {
             try {
               await reportExportProgress(
@@ -483,7 +483,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
             resolvedLibraryFileId = resolvedLibraryFileId || info.libraryFileId || null;
           } catch (e) {
             console.warn(
-              "chatgpt2md: could not resolve attachment metadata",
+              "chatgpt-export-md-html: could not resolve attachment metadata",
               a.id || a.sandboxPath || "",
               e
             );
@@ -552,7 +552,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const conversationUrl = `https://chatgpt.com/c/${data.conversation_id}`;
     const exportJson = {
       schemaVersion: 1,
-      exporter: "chatgpt2md",
+      exporter: "chatgpt-export-md-html",
       exporterVersion: chrome.runtime.getManifest().version,
       title: exportName,
       conversationId: data.conversation_id,
@@ -618,7 +618,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     try {
       selectionState = await chrome.tabs.sendMessage(tabId, { type: "RESET_AFTER_EXPORT" });
     } catch (e) {
-      console.warn("chatgpt2md: could not reset selection UI after export", e);
+      console.warn("chatgpt-export-md-html: could not reset selection UI after export", e);
     }
 
     return { ok: true, filename, selectionState };
