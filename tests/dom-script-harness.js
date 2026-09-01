@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { vi } from "vitest";
 
 class PassiveMutationObserver {
@@ -53,7 +54,7 @@ export function loadBrowserScript(path, {
   globalThis.requestAnimationFrame = requestAnimationFrame;
   window.requestAnimationFrame = requestAnimationFrame;
 
-  const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+  const source = readFileSync(resolve(process.cwd(), path), "utf8");
   const execute = new Function(
     "window",
     "document",
