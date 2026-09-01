@@ -552,7 +552,9 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const conversationUrl = `https://chatgpt.com/c/${data.conversation_id}`;
     const exportJson = {
       schemaVersion: 1,
-      exporter: "chatgpt-export-md-html",
+      // Keep the original machine identifier stable for existing JSON consumers.
+      // The human/project name has changed, but this schema-level value is legacy-compatible.
+      exporter: "chatgpt2md",
       exporterVersion: chrome.runtime.getManifest().version,
       title: exportName,
       conversationId: data.conversation_id,

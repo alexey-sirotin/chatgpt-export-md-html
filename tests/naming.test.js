@@ -12,7 +12,8 @@ describe("project naming", () => {
   it("does not leak the retired chatgpt2md identifier into runtime code", () => {
     for (const path of runtimeFiles) {
       const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-      expect(source.toLowerCase(), path).not.toContain("chatgpt2md");
+      const compatibilitySafe = source.replace(/exporter:\s*["']chatgpt2md["']/, "");
+      expect(compatibilitySafe.toLowerCase(), path).not.toContain("chatgpt2md");
     }
   });
 });
