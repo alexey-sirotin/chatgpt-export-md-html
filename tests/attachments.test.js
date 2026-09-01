@@ -81,7 +81,7 @@ describe("sandbox attachment links", () => {
     expect(records[0]).toMatchObject({
       source: "sandbox",
       originalName: "report one.pdf",
-      sandboxPath: "/mnt/data/report%20one.pdf"
+      sandboxPath: "/mnt/data/report one.pdf"
     });
 
     const rewritten = replaceSandboxLinkDestinations(
