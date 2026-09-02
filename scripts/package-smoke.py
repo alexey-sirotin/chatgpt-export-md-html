@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 
 COMMON_ROOT_FILES = {
+    "async-pool.js",
     "attachments.js",
     "background.js",
     "chatgpt-api.js",

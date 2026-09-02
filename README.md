@@ -22,6 +22,7 @@ Current version: **0.1.33**
 - Optional separate folder for attachments.
 - Long-export progress survives closing and reopening the extension popup.
 - Cancel a long-running export without losing the current message selection.
+- Download attachments with bounded concurrency while preserving deterministic export order.
 - Cache the logical message-selection index for faster popup reopening while keeping export contents authoritative from a fresh conversation fetch.
 - Use Blob/Object URL downloads for large ZIP archives instead of base64 data URLs.
 - Shared Chromium and Firefox codebase with browser-specific release packaging.
@@ -135,6 +136,7 @@ _locales/                      UI translations
 icons/                         Extension icons
 scripts/package.sh             Chromium/Firefox package builder
 scripts/package-smoke.py        Release-package content and manifest smoke test
+async-pool.js                  Small bounded-concurrency worker pool
 attachments.js                 Attachment discovery and normalization
 background.js                  Export orchestration, selection cache and download lifecycle
 chatgpt-api.js                 ChatGPT session/API access and file resolution

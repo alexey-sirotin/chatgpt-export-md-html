@@ -37,12 +37,15 @@ import {
   isAbortError,
   throwIfAborted
 } from "./cancellation.js";
+import { mapWithConcurrency } from "./async-pool.js";
 import { buildMarkdownExport, buildHtmlExport } from "./render.js";
 import { makeZip } from "./zip.js";
 import {
   createDownloadObjectUrl,
   revokeDownloadObjectUrl
 } from "./download-url.js";
+
+const ATTACHMENT_DOWNLOAD_CONCURRENCY = 3;
 
 function waitForDownloadCompletion(downloadId, signal) {
   return new Promise((resolve, reject) => {
@@ -505,99 +508,210 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const usedMediaNames = new Set();
     const jsonMessages = [];
 
-    const totalAttachments = saveAttachments
-      ? branch.reduce(
-          (sum, node) => sum + attachmentRecords(node.message, data.safe_urls || []).length,
-          0
-        )
-      : 0;
-    let downloadedAttachments = 0;
-    let idx = 0;
+    const preparedMessages = [];
+    const attachmentJobs = [];
+    let outputMessageIndex = 0;
+    let branchIndex = 0;
     let omissionPending = omission.omittedAtStart;
+
     for (const node of branch) {
       throwIfAborted(signal, t("exportCanceled"));
-      if (omission.beforeNodes.has(node)) omissionPending = true;
-      idx++;
-      if (idx === 1 || idx === branch.length || idx % 10 === 0) {
-        await reportExportProgress(tabId, t("progressProcessingMessages", [idx, branch.length]));
+      branchIndex++;
+
+      if (
+        branchIndex === 1 ||
+        branchIndex === branch.length ||
+        branchIndex % 10 === 0
+      ) {
+        await reportExportProgress(
+          tabId,
+          t("progressProcessingMessages", [branchIndex, branch.length])
+        );
       }
+
+      if (omission.beforeNodes.has(node)) omissionPending = true;
+
       const msgObj = node.message;
       const sourceRole = msgObj.author?.role || "unknown";
       const role = sourceRole === "tool" ? "assistant" : sourceRole;
       const rawTexts = textParts(msgObj);
       const attachments = attachmentRecords(msgObj, data.safe_urls || []);
 
-      if (!rawTexts.length && !attachments.length) {
-        idx--;
-        continue;
+      if (!rawTexts.length && !attachments.length) continue;
+
+      outputMessageIndex++;
+      const prepared = {
+        node,
+        msgObj,
+        sourceRole,
+        role,
+        rawTexts,
+        omittedBefore: omissionPending,
+        outputMessageIndex,
+        attachments: []
+      };
+      omissionPending = false;
+
+      let attachmentIndex = 0;
+      for (const attachment of attachments) {
+        attachmentIndex++;
+        const job = {
+          prepared,
+          attachment,
+          attachmentIndex,
+          resolvedOriginalName: attachment.originalName || attachment.title || null,
+          resolvedMimeType: attachment.mimeType || "application/octet-stream",
+          resolvedFileId: attachment.id || null,
+          resolvedLibraryFileId: attachment.libraryFileId || null,
+          media: null,
+          downloadError: null
+        };
+        prepared.attachments.push(job);
+        attachmentJobs.push(job);
       }
 
-      const jsonAtt = [];
-      const sandboxHrefReplacements = new Map();
+      preparedMessages.push(prepared);
+    }
 
-      let aidx = 0;
-      for (const a of attachments) {
+    const totalAttachments = saveAttachments ? attachmentJobs.length : 0;
+    let completedAttachments = 0;
+    let progressReports = Promise.resolve();
+
+    const reportAttachmentCompleted = () => {
+      if (!saveAttachments) return Promise.resolve();
+      const completed = ++completedAttachments;
+      progressReports = progressReports.then(() =>
+        reportExportProgress(
+          tabId,
+          t("progressDownloadingMedia", [completed, totalAttachments])
+        )
+      );
+      return progressReports;
+    };
+
+    if (saveAttachments && totalAttachments) {
+      await reportExportProgress(
+        tabId,
+        t("progressDownloadingMedia", [0, totalAttachments])
+      );
+    }
+
+    await mapWithConcurrency(
+      attachmentJobs,
+      ATTACHMENT_DOWNLOAD_CONCURRENCY,
+      async job => {
         throwIfAborted(signal, t("exportCanceled"));
-        aidx++;
 
-        let resolvedOriginalName = a.originalName || a.title || null;
-        let resolvedMimeType = a.mimeType || "application/octet-stream";
-        let resolvedFileId = a.id || null;
-        let resolvedLibraryFileId = a.libraryFileId || null;
-        let media = null;
-        let downloadError = null;
-
+        const { attachment: a, prepared } = job;
         const downloadRecord = a.source === "sandbox"
-          ? { ...a, conversationId: data.conversation_id, messageId: msgObj.id }
+          ? {
+              ...a,
+              conversationId: data.conversation_id,
+              messageId: prepared.msgObj.id
+            }
           : a;
 
         if (saveAttachments) {
           if (!a.id && a.source !== "sandbox") {
-            downloadError = t("errorAttachmentId");
+            job.downloadError = t("errorAttachmentId");
           } else {
             try {
-              await reportExportProgress(
+              job.media = await downloadAttachmentInPage(
                 tabId,
-                t("progressDownloadingMedia", [downloadedAttachments + 1, totalAttachments])
+                downloadRecord,
+                false,
+                exportId
               );
-              media = await downloadAttachmentInPage(tabId, downloadRecord, false, exportId);
               throwIfAborted(signal, t("exportCanceled"));
-              resolvedOriginalName = resolvedOriginalName || media.originalName || null;
-              resolvedMimeType = media.type || a.mimeType || "application/octet-stream";
-              resolvedFileId = resolvedFileId || media.fileId || null;
-              resolvedLibraryFileId = resolvedLibraryFileId || media.libraryFileId || null;
-            } catch (e) {
-              if (signal.aborted || isAbortError(e)) {
+
+              job.resolvedOriginalName =
+                job.resolvedOriginalName || job.media.originalName || null;
+              job.resolvedMimeType =
+                job.media.type || a.mimeType || "application/octet-stream";
+              job.resolvedFileId =
+                job.resolvedFileId || job.media.fileId || null;
+              job.resolvedLibraryFileId =
+                job.resolvedLibraryFileId || job.media.libraryFileId || null;
+            } catch (error) {
+              if (signal.aborted || isAbortError(error)) {
                 throw createAbortError(t("exportCanceled"));
               }
-              downloadError = String(e);
+              job.downloadError = String(error);
             }
           }
-        } else if (
+
+          await reportAttachmentCompleted();
+          return job;
+        }
+
+        if (
           (a.id || a.source === "sandbox") &&
-          (!resolvedOriginalName || !a.mimeType || a.mimeType === "application/octet-stream")
+          (!job.resolvedOriginalName ||
+            !a.mimeType ||
+            a.mimeType === "application/octet-stream")
         ) {
           try {
-            const info = await downloadAttachmentInPage(tabId, downloadRecord, true, exportId);
+            const info = await downloadAttachmentInPage(
+              tabId,
+              downloadRecord,
+              true,
+              exportId
+            );
             throwIfAborted(signal, t("exportCanceled"));
-            resolvedOriginalName = info.originalName || resolvedOriginalName;
-            resolvedMimeType = info.type || resolvedMimeType;
-            resolvedFileId = resolvedFileId || info.fileId || null;
-            resolvedLibraryFileId = resolvedLibraryFileId || info.libraryFileId || null;
-          } catch (e) {
-            if (signal.aborted || isAbortError(e)) {
+
+            job.resolvedOriginalName =
+              info.originalName || job.resolvedOriginalName;
+            job.resolvedMimeType = info.type || job.resolvedMimeType;
+            job.resolvedFileId =
+              job.resolvedFileId || info.fileId || null;
+            job.resolvedLibraryFileId =
+              job.resolvedLibraryFileId || info.libraryFileId || null;
+          } catch (error) {
+            if (signal.aborted || isAbortError(error)) {
               throw createAbortError(t("exportCanceled"));
             }
             console.warn(
               "chatgpt-export-md-html: could not resolve attachment metadata",
               a.id || a.sandboxPath || "",
-              e
+              error
             );
           }
         }
 
-        const hasKnownImageExtension = /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i
-          .test(resolvedOriginalName || "");
+        return job;
+      }
+    );
+    await progressReports;
+    throwIfAborted(signal, t("exportCanceled"));
+
+    for (const prepared of preparedMessages) {
+      const {
+        node,
+        msgObj,
+        sourceRole,
+        role,
+        rawTexts,
+        outputMessageIndex
+      } = prepared;
+      const jsonAtt = [];
+      const sandboxHrefReplacements = new Map();
+
+      for (const job of prepared.attachments) {
+        const {
+          attachment: a,
+          attachmentIndex,
+          media,
+          downloadError
+        } = job;
+
+        let resolvedOriginalName = job.resolvedOriginalName;
+        let resolvedMimeType = job.resolvedMimeType;
+        const resolvedFileId = job.resolvedFileId;
+        const resolvedLibraryFileId = job.resolvedLibraryFileId;
+
+        const hasKnownImageExtension =
+          /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i
+            .test(resolvedOriginalName || "");
         if (
           a.isImage &&
           (!resolvedMimeType || resolvedMimeType === "application/octet-stream") &&
@@ -607,9 +721,14 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         }
 
         const ext = extFromMime(resolvedMimeType, resolvedOriginalName || "");
-        const fallbackName = `${String(idx).padStart(4,"0")}-${role}-${String(aidx).padStart(2,"0")}.${ext}`;
+        const fallbackName =
+          `${String(outputMessageIndex).padStart(4, "0")}-${role}-${String(attachmentIndex).padStart(2, "0")}.${ext}`;
         const preferredName = filenameWithExtension(resolvedOriginalName, ext);
-        const localName = uniqueFilename(preferredName, fallbackName, usedMediaNames);
+        const localName = uniqueFilename(
+          preferredName,
+          fallbackName,
+          usedMediaNames
+        );
         const localPath = folder ? `${folder}/${localName}` : localName;
         const href = markdownHref(localPath);
 
@@ -631,11 +750,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
           mimeType: resolvedMimeType || a.mimeType,
           ...(downloadError ? { error: downloadError } : {})
         });
-
-        if (saveAttachments) downloadedAttachments++;
       }
 
-      const texts = rawTexts.map(text => replaceSandboxLinkDestinations(text, sandboxHrefReplacements));
+      const texts = rawTexts.map(text =>
+        replaceSandboxLinkDestinations(text, sandboxHrefReplacements)
+      );
       jsonMessages.push({
         id: msgObj.id,
         parentId: node.parent,
@@ -643,12 +762,14 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         sourceRole,
         authorName: role === "user" ? userName : assistantName,
         createdAt: isoUtc(msgObj.create_time),
-        model: msgObj.metadata?.model_slug || msgObj.metadata?.resolved_model_slug || null,
-        ...(omissionPending ? { omittedBefore: true } : {}),
+        model:
+          msgObj.metadata?.model_slug ||
+          msgObj.metadata?.resolved_model_slug ||
+          null,
+        ...(prepared.omittedBefore ? { omittedBefore: true } : {}),
         content: texts.map(text => ({ type: "text", text, format: "markdown" })),
         attachments: jsonAtt
       });
-      omissionPending = false;
     }
 
     if (omission.omittedAtEnd && jsonMessages.length) {
