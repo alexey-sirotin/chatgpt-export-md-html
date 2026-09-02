@@ -39,6 +39,9 @@ jobs:
             bash scripts/package.sh
           fi
 
+      - name: Smoke-test browser packages
+        run: npm run test:package
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v7
         with:

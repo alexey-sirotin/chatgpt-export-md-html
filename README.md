@@ -133,6 +133,7 @@ Extension preferences and temporary per-session UI/cache state are stored using 
 _locales/                      UI translations
 icons/                         Extension icons
 scripts/package.sh             Chromium/Firefox package builder
+scripts/package-smoke.py        Release-package content and manifest smoke test
 attachments.js                 Attachment discovery and normalization
 background.js                  Export orchestration, selection cache and download lifecycle
 chatgpt-api.js                 ChatGPT session/API access and file resolution
@@ -191,7 +192,7 @@ The resulting archives are written to `dist/`. This command is for development a
 
 For release packaging, pushing a tag such as `v0.1.32` runs the GitHub Actions packaging workflow. The workflow verifies that the tag matches the version in `manifest.json`, builds both browser archives and creates a **draft GitHub Release** with both ZIP files attached. The draft can then be reviewed and published manually, which keeps release immutability compatible with the packaging flow.
 
-Pull requests also run the packaging workflow as a validation check and expose the two ZIP files as a workflow artifact.
+Pull requests also run the packaging workflow as a validation check. After both browser ZIPs are built, a smoke test verifies their file allowlist and browser-specific manifest rules before the packages are exposed as a workflow artifact.
 
 ## License
 
