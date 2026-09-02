@@ -1,11 +1,58 @@
 import { t } from "./utils.js";
 
-export async function getConversationInPage(tabId) {
+const PAGE_ABORT_CONTROLLERS_KEY = "__chatgptExportAbortControllers";
+
+export async function abortExportInPage(tabId, exportId) {
+  if (!exportId) return;
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    args: [PAGE_ABORT_CONTROLLERS_KEY, exportId],
+    func: (registryKey, exportId) => {
+      const registry = globalThis[registryKey] ||= new Map();
+      let controller = registry.get(exportId);
+      if (!controller) {
+        controller = new AbortController();
+        registry.set(exportId, controller);
+      }
+      controller.abort();
+    }
+  });
+}
+
+export async function clearExportAbortInPage(tabId, exportId) {
+  if (!exportId) return;
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    args: [PAGE_ABORT_CONTROLLERS_KEY, exportId],
+    func: (registryKey, exportId) => {
+      globalThis[registryKey]?.delete?.(exportId);
+    }
+  });
+}
+
+export async function getConversationInPage(tabId, exportId = null) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
-    args: [t("errorConversationId"), t("errorAccessToken")],
-    func: async (errorConversationId, errorAccessToken) => {
+    args: [
+      t("errorConversationId"),
+      t("errorAccessToken"),
+      PAGE_ABORT_CONTROLLERS_KEY,
+      exportId
+    ],
+    func: async (errorConversationId, errorAccessToken, registryKey, exportId) => {
+      let signal;
+      if (exportId) {
+        const registry = globalThis[registryKey] ||= new Map();
+        let controller = registry.get(exportId);
+        if (!controller) {
+          controller = new AbortController();
+          registry.set(exportId, controller);
+        }
+        signal = controller.signal;
+      }
       const m = location.pathname.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       if (!m) throw new Error(errorConversationId);
       const conversationId = m[0];
@@ -14,7 +61,10 @@ export async function getConversationInPage(tabId) {
       const cachedSession = globalThis[sessionCacheKey];
       let accessToken = cachedSession?.accessToken || null;
       if (!accessToken || Date.now() - Number(cachedSession?.updatedAt || 0) > 5 * 60 * 1000) {
-        const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
+        const sessionRes = await fetch("/api/auth/session", {
+          credentials: "include",
+          signal
+        });
         const session = await sessionRes.json();
         accessToken = session.accessToken || null;
         if (accessToken) {
@@ -24,7 +74,8 @@ export async function getConversationInPage(tabId) {
       if (!accessToken) throw new Error(errorAccessToken);
 
       const res = await fetch(`/backend-api/conversation/${conversationId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal
       });
       if (!res.ok) throw new Error(`conversation GET: ${res.status}`);
       return await res.json();
@@ -33,7 +84,12 @@ export async function getConversationInPage(tabId) {
   return result;
 }
 
-export async function downloadAttachmentInPage(tabId, attachment, metadataOnly = false) {
+export async function downloadAttachmentInPage(
+  tabId,
+  attachment,
+  metadataOnly = false,
+  exportId = null
+) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
@@ -42,20 +98,37 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
       metadataOnly,
       t("errorAttachmentId"),
       t("errorDownloadUrl", attachment?.id || attachment?.sandboxPath || ""),
-      t("errorSandboxAttachmentContext")
+      t("errorSandboxAttachmentContext"),
+      PAGE_ABORT_CONTROLLERS_KEY,
+      exportId
     ],
     func: async (
       attachment,
       metadataOnly,
       errorAttachmentId,
       errorDownloadUrl,
-      errorSandboxAttachmentContext
+      errorSandboxAttachmentContext,
+      registryKey,
+      exportId
     ) => {
+      let signal;
+      if (exportId) {
+        const registry = globalThis[registryKey] ||= new Map();
+        let controller = registry.get(exportId);
+        if (!controller) {
+          controller = new AbortController();
+          registry.set(exportId, controller);
+        }
+        signal = controller.signal;
+      }
       const sessionCacheKey = "__chatgptExportMdHtmlSessionCache";
       const cachedSession = globalThis[sessionCacheKey];
       let accessToken = cachedSession?.accessToken || null;
       if (!accessToken || Date.now() - Number(cachedSession?.updatedAt || 0) > 5 * 60 * 1000) {
-        const sessionRes = await fetch("/api/auth/session", { credentials: "include" });
+        const sessionRes = await fetch("/api/auth/session", {
+          credentials: "include",
+          signal
+        });
         const session = await sessionRes.json();
         accessToken = session.accessToken || null;
         if (accessToken) {
@@ -163,7 +236,7 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
         });
         const metaRes = await fetch(
           `/backend-api/conversation/${encodeURIComponent(conversationId)}/interpreter/download?${qs}`,
-          { method: "GET", headers, credentials: "include" }
+          { method: "GET", headers, credentials: "include", signal }
         );
         if (!metaRes.ok) {
           const preview = (await metaRes.text()).slice(0, 300);
@@ -195,7 +268,8 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
         const metaRes = await fetch(`/backend-api/files/download/${encodeURIComponent(resolvedFileId)}`, {
           method: "GET",
           headers,
-          credentials: "include"
+          credentials: "include",
+          signal
         });
         if (!metaRes.ok) {
           const preview = (await metaRes.text()).slice(0, 300);
@@ -232,10 +306,13 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
           const headRes = await fetch(mediaUrl, {
             method: "HEAD",
             headers,
-            credentials: "include"
+            credentials: "include",
+            signal
           });
           if (headRes.ok) applyResponseMetadata(headRes);
-        } catch {}
+        } catch (error) {
+          if (signal?.aborted) throw error;
+        }
 
         // Some attachment hosts omit Content-Disposition/Content-Type on HEAD.
         // Probe only the first byte so metadata-only export can still use the
@@ -246,10 +323,12 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
             probeRes = await fetch(mediaUrl, {
               method: "GET",
               headers: { ...headers, Range: "bytes=0-0" },
-              credentials: "include"
+              credentials: "include",
+              signal
             });
             if (probeRes.ok) applyResponseMetadata(probeRes);
-          } catch {
+          } catch (error) {
+            if (signal?.aborted) throw error;
           } finally {
             try { await probeRes?.body?.cancel(); } catch {}
           }
@@ -268,7 +347,8 @@ export async function downloadAttachmentInPage(tabId, attachment, metadataOnly =
       const fileRes = await fetch(mediaUrl, {
         method: "GET",
         headers,
-        credentials: "include"
+        credentials: "include",
+        signal
       });
       if (!fileRes.ok) {
         const preview = (await fileRes.text()).slice(0, 300);

@@ -10,6 +10,7 @@ COMMON_ROOT_FILES = {
     "attachments.js",
     "background.js",
     "chatgpt-api.js",
+    "cancellation.js",
     "content.js",
     "conversation.js",
     "dom-selection.js",

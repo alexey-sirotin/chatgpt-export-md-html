@@ -235,5 +235,14 @@
   },
   "errorSandboxAttachmentContext": {
     "message": "Для sandbox-вложения отсутствует контекст чата или сообщения"
+  },
+  "cancelExport": {
+    "message": "Отменить экспорт"
+  },
+  "cancelingExport": {
+    "message": "Отменяю экспорт…"
+  },
+  "exportCanceled": {
+    "message": "Экспорт отменён."
   }
 }

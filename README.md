@@ -21,6 +21,7 @@ Current version: **0.1.33**
 - Mark omitted beginning, internal gaps and omitted end in partial Markdown/HTML exports; JSON carries matching omission metadata.
 - Optional separate folder for attachments.
 - Long-export progress survives closing and reopening the extension popup.
+- Cancel a long-running export without losing the current message selection.
 - Cache the logical message-selection index for faster popup reopening while keeping export contents authoritative from a fresh conversation fetch.
 - Use Blob/Object URL downloads for large ZIP archives instead of base64 data URLs.
 - Shared Chromium and Firefox codebase with browser-specific release packaging.
@@ -62,7 +63,7 @@ The release archive is already packaged for Firefox; users do not need to run `s
 5. Choose whether the original ChatGPT conversation link should be included.
 6. Choose whether attachments should be downloaded and whether they should be placed in a separate folder.
 7. Export the whole current branch, or enable message selection and choose only the messages you need.
-8. Download the resulting ZIP archive.
+8. Download the resulting ZIP archive. Long-running exports can be canceled from the popup before completion.
 
 A typical export looks like this:
 

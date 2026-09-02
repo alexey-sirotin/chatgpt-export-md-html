@@ -235,5 +235,14 @@
   },
   "errorSandboxAttachmentContext": {
     "message": "Sandbox attachment is missing conversation or message context"
+  },
+  "cancelExport": {
+    "message": "Cancel export"
+  },
+  "cancelingExport": {
+    "message": "Canceling export…"
+  },
+  "exportCanceled": {
+    "message": "Export canceled."
   }
 }
