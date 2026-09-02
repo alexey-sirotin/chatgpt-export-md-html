@@ -116,8 +116,6 @@ async function requestExportCancellation(tabId) {
     return { ok: true, canceled: false };
   }
 
-  operation?.controller.abort();
-
   if (progress?.active) {
     const state = {
       ...progress,
@@ -137,6 +135,11 @@ async function requestExportCancellation(tabId) {
       });
     } catch {}
   }
+
+  // Persist the user's intent before aborting anything. Some abortable stages
+  // reject immediately, so writing state first avoids racing a completed
+  // cancellation against a late "cancel requested" progress update.
+  operation?.controller.abort();
 
   const tasks = [];
   if (exportId) tasks.push(abortExportInPage(tabId, exportId));
@@ -200,7 +203,9 @@ async function reportExportProgress(tabId, text) {
   const state = {
     ...previous,
     active: true,
-    text,
+    text: previous.cancelRequested
+      ? previous.text || t("cancelingExport")
+      : text,
     updatedAt: Date.now()
   };
   await storeExportProgress(tabId, state);
@@ -208,7 +213,7 @@ async function reportExportProgress(tabId, text) {
     await chrome.runtime.sendMessage({
       type: "EXPORT_PROGRESS",
       tabId,
-      text,
+      text: state.text,
       startedAt: state.startedAt,
       cancelRequested: !!state.cancelRequested
     });
