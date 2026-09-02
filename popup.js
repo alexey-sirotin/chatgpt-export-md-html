@@ -101,6 +101,8 @@ function setWorking(working) {
     const el = $(id);
     if (el) el.disabled = working;
   }
+  $("cancel").hidden = !working;
+  $("cancel").disabled = !working;
   if (!working) {
     syncAttachmentOptionsUi();
     syncFormatOptionsUi();
@@ -129,6 +131,7 @@ function restoreProgress(state) {
   if (!state?.active) return false;
   if (state.exportName) $("name").value = state.exportName;
   startProgress(state.text || t("exporting"), state.startedAt || Date.now());
+  if (state.cancelRequested) $("cancel").disabled = true;
   return true;
 }
 
@@ -363,12 +366,34 @@ $("export").onclick = async () => {
       // popup at that point; the content-script selection state has already
       // been reset for the next export.
       window.close();
+    } else if (r.canceled) {
+      $("status").textContent = t("exportCanceled");
     } else {
       $("status").textContent = t("errorPrefix", r.error);
     }
   } catch (e) {
     stopProgress();
     $("status").textContent = t("errorPrefix", e.message);
+  }
+};
+
+$("cancel").onclick = async () => {
+  if (!exportStartedAt || tabId == null) return;
+  $("cancel").disabled = true;
+  renderProgress(t("cancelingExport"));
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: "CANCEL_EXPORT",
+      tabId
+    });
+    if (!result?.ok) {
+      $("cancel").disabled = false;
+      $("status").textContent = t("errorPrefix", result?.error || t("unknownError"));
+    }
+  } catch (e) {
+    $("cancel").disabled = false;
+    $("status").textContent = t("errorPrefix", e.message || t("unknownError"));
   }
 };
 
@@ -381,6 +406,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     } else {
       renderProgress(msg.text || t("exporting"));
     }
+    if (msg.cancelRequested) $("cancel").disabled = true;
     return;
   }
 
@@ -389,6 +415,8 @@ chrome.runtime.onMessage.addListener((msg) => {
     stopProgress();
     if (msg.ok) {
       void clearExportNameDraft().finally(() => window.close());
+    } else if (msg.canceled) {
+      $("status").textContent = t("exportCanceled");
     } else {
       $("status").textContent = t("errorPrefix", msg.error || t("unknownError"));
     }

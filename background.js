@@ -28,8 +28,15 @@ import {
 } from "./attachments.js";
 import {
   getConversationInPage,
-  downloadAttachmentInPage
+  downloadAttachmentInPage,
+  abortExportInPage,
+  clearExportAbortInPage
 } from "./chatgpt-api.js";
+import {
+  createAbortError,
+  isAbortError,
+  throwIfAborted
+} from "./cancellation.js";
 import { buildMarkdownExport, buildHtmlExport } from "./render.js";
 import { makeZip } from "./zip.js";
 import {
@@ -37,7 +44,7 @@ import {
   revokeDownloadObjectUrl
 } from "./download-url.js";
 
-function waitForDownloadCompletion(downloadId) {
+function waitForDownloadCompletion(downloadId, signal) {
   return new Promise((resolve, reject) => {
     let settled = false;
 
@@ -45,6 +52,7 @@ function waitForDownloadCompletion(downloadId) {
       if (settled) return;
       settled = true;
       chrome.downloads.onChanged.removeListener(onChanged);
+      signal?.removeEventListener("abort", onAbort);
       error ? reject(error) : resolve();
     };
 
@@ -59,7 +67,17 @@ function waitForDownloadCompletion(downloadId) {
       }
     };
 
+    const onAbort = () => {
+      chrome.downloads.cancel(downloadId).catch(() => {});
+      finish(createAbortError(t("exportCanceled")));
+    };
+
     chrome.downloads.onChanged.addListener(onChanged);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
 
     // Close the small race where an extremely small archive completes before
     // the onChanged listener is attached.
@@ -73,6 +91,60 @@ function waitForDownloadCompletion(downloadId) {
 }
 
 const exportProgressState = new Map();
+const activeExports = new Map();
+
+function makeExportId(tabId) {
+  const suffix = globalThis.crypto?.randomUUID?.() ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${tabId}:${suffix}`;
+}
+
+function currentExportOperation(tabId, exportId = null) {
+  const operation = activeExports.get(tabId) || null;
+  if (!operation) return null;
+  if (exportId && operation.exportId !== exportId) return null;
+  return operation;
+}
+
+async function requestExportCancellation(tabId) {
+  const progress = await loadExportProgress(tabId);
+  const operation = currentExportOperation(tabId, progress?.exportId || null);
+  const exportId = operation?.exportId || progress?.exportId || null;
+  const downloadId = operation?.downloadId ?? progress?.downloadId ?? null;
+
+  if (!progress?.active && !operation) {
+    return { ok: true, canceled: false };
+  }
+
+  operation?.controller.abort();
+
+  if (progress?.active) {
+    const state = {
+      ...progress,
+      active: true,
+      cancelRequested: true,
+      text: t("cancelingExport"),
+      updatedAt: Date.now()
+    };
+    await storeExportProgress(tabId, state);
+    try {
+      await chrome.runtime.sendMessage({
+        type: "EXPORT_PROGRESS",
+        tabId,
+        text: state.text,
+        startedAt: state.startedAt,
+        cancelRequested: true
+      });
+    } catch {}
+  }
+
+  const tasks = [];
+  if (exportId) tasks.push(abortExportInPage(tabId, exportId));
+  if (downloadId != null) tasks.push(chrome.downloads.cancel(downloadId));
+  await Promise.allSettled(tasks);
+
+  return { ok: true, canceled: true };
+}
 
 function exportProgressKey(tabId) {
   return `exportProgress:${tabId}`;
@@ -106,12 +178,14 @@ async function clearExportProgress(tabId) {
   } catch {}
 }
 
-async function beginExportProgress(tabId, startedAt, exportName) {
+async function beginExportProgress(tabId, startedAt, exportName, exportId) {
   const state = {
     active: true,
+    exportId,
     startedAt: Number.isFinite(Number(startedAt)) ? Number(startedAt) : Date.now(),
     text: t("preparingExport"),
     exportName: exportName || "",
+    cancelRequested: false,
     updatedAt: Date.now()
   };
   await storeExportProgress(tabId, state);
@@ -135,7 +209,8 @@ async function reportExportProgress(tabId, text) {
       type: "EXPORT_PROGRESS",
       tabId,
       text,
-      startedAt: state.startedAt
+      startedAt: state.startedAt,
+      cancelRequested: !!state.cancelRequested
     });
   } catch {
     // The popup may have been closed while export continues. That is fine.
@@ -299,6 +374,14 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg.type !== "CANCEL_EXPORT") return;
+  requestExportCancellation(msg.tabId)
+    .then(respond)
+    .catch(error => respond({ ok: false, error: error.message || String(error) }));
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg.type !== "SELECTION_INDEX_SEEN_IDS") return;
 
   markSelectionIndexDirtyIfNeeded(
@@ -352,13 +435,21 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg.type !== "EXPORT_ACTIVE_TAB") return;
 
+  const tabId = msg.tabId;
+  const exportId = makeExportId(tabId);
+  const controller = new AbortController();
+  const signal = controller.signal;
+  activeExports.set(tabId, { exportId, controller, downloadId: null });
+
   (async () => {
-    const tabId = msg.tabId;
-    await beginExportProgress(tabId, msg.startedAt, msg.exportName);
+    await beginExportProgress(tabId, msg.startedAt, msg.exportName, exportId);
+    throwIfAborted(signal, t("exportCanceled"));
     await reportExportProgress(tabId, t("progressReadingSelection"));
     const selection = await chrome.tabs.sendMessage(tabId, { type: "GET_SELECTION" });
+    throwIfAborted(signal, t("exportCanceled"));
     await reportExportProgress(tabId, t("progressLoadingChat"));
-    const data = await getConversationInPage(tabId);
+    const data = await getConversationInPage(tabId, exportId);
+    throwIfAborted(signal, t("exportCanceled"));
     const rawBranch = rawBranchFromCurrent(data);
     await storeSelectionIndex(data.conversation_id, buildSelectionIndex(rawBranch));
     await enableSelectionIndexWatch(tabId);
@@ -419,6 +510,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     let idx = 0;
     let omissionPending = omission.omittedAtStart;
     for (const node of branch) {
+      throwIfAborted(signal, t("exportCanceled"));
       if (omission.beforeNodes.has(node)) omissionPending = true;
       idx++;
       if (idx === 1 || idx === branch.length || idx % 10 === 0) {
@@ -440,6 +532,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
       let aidx = 0;
       for (const a of attachments) {
+        throwIfAborted(signal, t("exportCanceled"));
         aidx++;
 
         let resolvedOriginalName = a.originalName || a.title || null;
@@ -462,12 +555,16 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
                 tabId,
                 t("progressDownloadingMedia", [downloadedAttachments + 1, totalAttachments])
               );
-              media = await downloadAttachmentInPage(tabId, downloadRecord);
+              media = await downloadAttachmentInPage(tabId, downloadRecord, false, exportId);
+              throwIfAborted(signal, t("exportCanceled"));
               resolvedOriginalName = resolvedOriginalName || media.originalName || null;
               resolvedMimeType = media.type || a.mimeType || "application/octet-stream";
               resolvedFileId = resolvedFileId || media.fileId || null;
               resolvedLibraryFileId = resolvedLibraryFileId || media.libraryFileId || null;
             } catch (e) {
+              if (signal.aborted || isAbortError(e)) {
+                throw createAbortError(t("exportCanceled"));
+              }
               downloadError = String(e);
             }
           }
@@ -476,12 +573,16 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
           (!resolvedOriginalName || !a.mimeType || a.mimeType === "application/octet-stream")
         ) {
           try {
-            const info = await downloadAttachmentInPage(tabId, downloadRecord, true);
+            const info = await downloadAttachmentInPage(tabId, downloadRecord, true, exportId);
+            throwIfAborted(signal, t("exportCanceled"));
             resolvedOriginalName = info.originalName || resolvedOriginalName;
             resolvedMimeType = info.type || resolvedMimeType;
             resolvedFileId = resolvedFileId || info.fileId || null;
             resolvedLibraryFileId = resolvedLibraryFileId || info.libraryFileId || null;
           } catch (e) {
+            if (signal.aborted || isAbortError(e)) {
+              throw createAbortError(t("exportCanceled"));
+            }
             console.warn(
               "chatgpt-export-md-html: could not resolve attachment metadata",
               a.id || a.sandboxPath || "",
@@ -563,6 +664,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       messages: jsonMessages
     };
 
+    throwIfAborted(signal, t("exportCanceled"));
     await reportExportProgress(tabId, t("progressBuildingFiles"));
     const files = [];
     if (exportMarkdown) {
@@ -587,8 +689,10 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       files.push({ name: `${exportName}.json`, bytes: enc(JSON.stringify(exportJson, null, 2)) });
     }
     files.push(...mediaFiles);
+    throwIfAborted(signal, t("exportCanceled"));
     await reportExportProgress(tabId, t("progressPackingZip"));
     let zip = makeZip(files);
+    throwIfAborted(signal, t("exportCanceled"));
     const filename = `${exportName}.zip`;
 
     // makeZip() copied every file into the archive buffer, so release the
@@ -598,15 +702,24 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     mediaFiles.length = 0;
 
     await reportExportProgress(tabId, t("progressPreparingDownload"));
+    throwIfAborted(signal, t("exportCanceled"));
     let url = null;
     try {
       url = await createDownloadObjectUrl(zip, "application/zip");
       zip = null;
+      throwIfAborted(signal, t("exportCanceled"));
 
       await reportExportProgress(tabId, t("progressSendingBrowser"));
       const downloadId = await chrome.downloads.download({ url, filename, saveAs: true });
+      const operation = currentExportOperation(tabId, exportId);
+      if (operation) operation.downloadId = downloadId;
+      const progress = await loadExportProgress(tabId);
+      if (progress?.active && progress.exportId === exportId) {
+        await storeExportProgress(tabId, { ...progress, downloadId, updatedAt: Date.now() });
+      }
+      throwIfAborted(signal, t("exportCanceled"));
       await reportExportProgress(tabId, t("progressWaitingDownload"));
-      await waitForDownloadCompletion(downloadId);
+      await waitForDownloadCompletion(downloadId, signal);
     } finally {
       await revokeDownloadObjectUrl(url);
     }
@@ -623,12 +736,27 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
     return { ok: true, filename, selectionState };
   })().then(async result => {
-    await finishExportProgress(msg.tabId, { ok: true, filename: result.filename });
+    await finishExportProgress(tabId, { ok: true, filename: result.filename });
     respond(result);
   }).catch(async e => {
-    const error = e.message || String(e);
-    await finishExportProgress(msg.tabId, { ok: false, error });
-    respond({ ok: false, error });
+    const canceled = signal.aborted || isAbortError(e);
+    const error = canceled ? t("exportCanceled") : (e.message || String(e));
+    await finishExportProgress(tabId, {
+      ok: false,
+      canceled,
+      ...(canceled ? {} : { error })
+    });
+    respond({
+      ok: false,
+      canceled,
+      ...(canceled ? {} : { error })
+    });
+  }).finally(async () => {
+    const operation = currentExportOperation(tabId, exportId);
+    if (operation) activeExports.delete(tabId);
+    try {
+      await clearExportAbortInPage(tabId, exportId);
+    } catch {}
   });
 
   return true;
