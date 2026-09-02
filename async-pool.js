@@ -8,11 +8,11 @@ export function normalizeConcurrency(
   const upper = Number.isFinite(upperRaw) ? Math.max(lower, upperRaw) : Number.POSITIVE_INFINITY;
   const requested = Math.floor(Number(value));
 
-  if (!Number.isFinite(requested) || requested < lower) {
+  if (!Number.isFinite(requested)) {
     return Math.min(Math.max(fallback || lower, lower), upper);
   }
 
-  return Math.min(requested, upper);
+  return Math.min(Math.max(requested, lower), upper);
 }
 
 export async function mapWithConcurrency(items, concurrency, worker) {
