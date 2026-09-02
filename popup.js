@@ -13,6 +13,19 @@ let selectedMessages = 0;
 let hasAuthoritativeSelectionState = false;
 let originalConversationTitle = "";
 
+const DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY = 3;
+const MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY = 1;
+const MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY = 6;
+
+function normalizedAttachmentDownloadConcurrency(value) {
+  const requested = Math.floor(Number(value));
+  if (!Number.isFinite(requested)) return DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY;
+  return Math.min(
+    MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY,
+    Math.max(MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY, requested)
+  );
+}
+
 async function send(type, payload = {}) {
   return chrome.tabs.sendMessage(tabId, { type, ...payload });
 }
@@ -96,7 +109,7 @@ function setWorking(working) {
   for (const id of [
     "toggle", "all", "none", "export", "name", "userName", "assistantName",
     "exportMarkdown", "exportHtml", "exportJson", "includeOriginalLink",
-    "saveAttachments", "separateAttachmentsFolder"
+    "saveAttachments", "separateAttachmentsFolder", "attachmentDownloadConcurrency"
   ]) {
     const el = $(id);
     if (el) el.disabled = working;
@@ -199,7 +212,8 @@ async function loadOptions() {
     exportJson: true,
     includeOriginalLink: true,
     saveAttachments: true,
-    separateAttachmentsFolder: true
+    separateAttachmentsFolder: true,
+    attachmentDownloadConcurrency: DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY
   });
   $("exportMarkdown").checked = saved.exportMarkdown !== false;
   $("exportHtml").checked = saved.exportHtml !== false;
@@ -207,6 +221,9 @@ async function loadOptions() {
   $("includeOriginalLink").checked = saved.includeOriginalLink !== false;
   $("saveAttachments").checked = saved.saveAttachments !== false;
   $("separateAttachmentsFolder").checked = saved.separateAttachmentsFolder !== false;
+  $("attachmentDownloadConcurrency").value = String(
+    normalizedAttachmentDownloadConcurrency(saved.attachmentDownloadConcurrency)
+  );
   syncAttachmentOptionsUi();
   syncFormatOptionsUi();
 }
@@ -218,13 +235,18 @@ async function saveOptions() {
   const includeOriginalLink = $("includeOriginalLink").checked;
   const saveAttachments = $("saveAttachments").checked;
   const separateAttachmentsFolder = $("separateAttachmentsFolder").checked;
+  const attachmentDownloadConcurrency = normalizedAttachmentDownloadConcurrency(
+    $("attachmentDownloadConcurrency").value
+  );
+  $("attachmentDownloadConcurrency").value = String(attachmentDownloadConcurrency);
   await chrome.storage.local.set({
     exportMarkdown,
     exportHtml,
     exportJson,
     includeOriginalLink,
     saveAttachments,
-    separateAttachmentsFolder
+    separateAttachmentsFolder,
+    attachmentDownloadConcurrency
   });
   syncAttachmentOptionsUi();
   syncFormatOptionsUi();
@@ -234,7 +256,8 @@ async function saveOptions() {
     exportJson,
     includeOriginalLink,
     saveAttachments,
-    separateAttachmentsFolder
+    separateAttachmentsFolder,
+    attachmentDownloadConcurrency
   };
 }
 
@@ -356,7 +379,8 @@ $("export").onclick = async () => {
       exportJson: options.exportJson,
       includeOriginalLink: options.includeOriginalLink,
       saveAttachments: options.saveAttachments,
-      separateAttachmentsFolder: options.separateAttachmentsFolder
+      separateAttachmentsFolder: options.separateAttachmentsFolder,
+      attachmentDownloadConcurrency: options.attachmentDownloadConcurrency
     });
     stopProgress();
     if (r.ok) {
@@ -434,5 +458,6 @@ $("exportJson").addEventListener("change", saveOptions);
 $("includeOriginalLink").addEventListener("change", saveOptions);
 $("saveAttachments").addEventListener("change", saveOptions);
 $("separateAttachmentsFolder").addEventListener("change", saveOptions);
+$("attachmentDownloadConcurrency").addEventListener("change", saveOptions);
 
 init();

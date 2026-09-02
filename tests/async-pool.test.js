@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { mapWithConcurrency } from "../async-pool.js";
+import {
+  mapWithConcurrency,
+  normalizeConcurrency
+} from "../async-pool.js";
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+describe("normalizeConcurrency", () => {
+  it("uses the default for invalid values and clamps the configured range", () => {
+    const options = { defaultValue: 3, min: 1, max: 6 };
+
+    expect(normalizeConcurrency(undefined, options)).toBe(3);
+    expect(normalizeConcurrency("not-a-number", options)).toBe(3);
+    expect(normalizeConcurrency(0, options)).toBe(3);
+    expect(normalizeConcurrency(1, options)).toBe(1);
+    expect(normalizeConcurrency("4", options)).toBe(4);
+    expect(normalizeConcurrency(99, options)).toBe(6);
+  });
+});
 
 describe("mapWithConcurrency", () => {
   it("preserves input order while limiting active workers", async () => {
