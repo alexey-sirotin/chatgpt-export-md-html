@@ -640,7 +640,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
             }
           }
 
-          await reportAttachmentCompleted();
+          reportAttachmentCompleted();
           return job;
         }
 

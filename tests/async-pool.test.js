@@ -44,10 +44,10 @@ describe("mapWithConcurrency", () => {
     await expect(mapWithConcurrency([0, 1, 2, 3], 2, async value => {
       events.push(`start-${value}`);
       if (value === 0) {
-        await delay(2);
+        await delay(1);
         throw new Error("boom");
       }
-      await delay(8);
+      await delay(20);
       events.push(`end-${value}`);
       return value;
     })).rejects.toThrow("boom");
