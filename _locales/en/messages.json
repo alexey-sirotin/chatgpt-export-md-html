@@ -244,5 +244,8 @@
   },
   "exportCanceled": {
     "message": "Export canceled."
+  },
+  "attachmentDownloadConcurrency": {
+    "message": "Concurrent downloads"
   }
 }

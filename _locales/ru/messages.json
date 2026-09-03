@@ -244,5 +244,8 @@
   },
   "exportCanceled": {
     "message": "Экспорт отменён."
+  },
+  "attachmentDownloadConcurrency": {
+    "message": "Одновременных загрузок"
   }
 }

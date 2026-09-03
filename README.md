@@ -22,7 +22,7 @@ Current version: **0.1.33**
 - Optional separate folder for attachments.
 - Long-export progress survives closing and reopening the extension popup.
 - Cancel a long-running export without losing the current message selection.
-- Download attachments with bounded concurrency while preserving deterministic export order.
+- Download attachments with configurable bounded concurrency (1–10, default 3) while preserving deterministic export order.
 - Cache the logical message-selection index for faster popup reopening while keeping export contents authoritative from a fresh conversation fetch.
 - Use Blob/Object URL downloads for large ZIP archives instead of base64 data URLs.
 - Shared Chromium and Firefox codebase with browser-specific release packaging.
@@ -62,7 +62,7 @@ The release archive is already packaged for Firefox; users do not need to run `s
 3. Optionally change the export filename and display names.
 4. Choose Markdown, HTML and/or JSON.
 5. Choose whether the original ChatGPT conversation link should be included.
-6. Choose whether attachments should be downloaded and whether they should be placed in a separate folder.
+6. Choose whether attachments should be downloaded, whether they should be placed in a separate folder, and optionally adjust concurrent downloads (1–10; default 3).
 7. Export the whole current branch, or enable message selection and choose only the messages you need.
 8. Download the resulting ZIP archive. Long-running exports can be canceled from the popup before completion.
 

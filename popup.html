@@ -35,14 +35,16 @@
       color: var(--fg);
     }
     .title { display: block; margin-bottom: 4px; }
-    input[type="text"] {
-      width: 100%;
-      margin: 6px 0;
-      padding: 7px 8px;
+    input[type="text"], select {
       color: var(--fg);
       background: var(--control-bg);
       border: 1px solid var(--control-border);
       border-radius: 4px;
+    }
+    input[type="text"] {
+      width: 100%;
+      margin: 6px 0;
+      padding: 7px 8px;
     }
     label { display: block; margin-top: 7px; font-size: 12px; color: var(--muted); }
     .names { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -60,7 +62,13 @@
     }
     .formats .option { margin: 3px 0 5px; }
     .option input { width: auto; margin: 0; accent-color: currentColor; }
-    .option:has(input:disabled) { opacity: 0.55; cursor: default; }
+    .option select {
+      margin-left: auto;
+      min-width: 58px;
+      padding: 4px 6px;
+    }
+    .option:has(input:disabled),
+    .option:has(select:disabled) { opacity: 0.55; cursor: default; }
     button {
       width: 100%;
       margin: 4px 0;
@@ -115,6 +123,19 @@
   <label class="option">
     <input id="separateAttachmentsFolder" type="checkbox" checked>
     <span data-i18n="saveAttachmentsSeparate"></span>
+  </label>
+  <label class="option">
+    <span data-i18n="attachmentDownloadConcurrency"></span>
+    <select id="attachmentDownloadConcurrency">
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3" selected>3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="8">8</option>
+      <option value="10">10</option>
+    </select>
   </label>
   <button id="toggle" data-i18n="showSelection"></button>
   <div class="row">
