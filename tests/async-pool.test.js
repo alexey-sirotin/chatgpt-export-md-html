@@ -8,14 +8,14 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 describe("normalizeConcurrency", () => {
   it("uses the default for invalid values and clamps the configured range", () => {
-    const options = { defaultValue: 3, min: 1, max: 6 };
+    const options = { defaultValue: 3, min: 1, max: 10 };
 
     expect(normalizeConcurrency(undefined, options)).toBe(3);
     expect(normalizeConcurrency("not-a-number", options)).toBe(3);
     expect(normalizeConcurrency(0, options)).toBe(1);
     expect(normalizeConcurrency(1, options)).toBe(1);
     expect(normalizeConcurrency("4", options)).toBe(4);
-    expect(normalizeConcurrency(99, options)).toBe(6);
+    expect(normalizeConcurrency(99, options)).toBe(10);
   });
 });
 

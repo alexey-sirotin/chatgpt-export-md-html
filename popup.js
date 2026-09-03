@@ -15,7 +15,7 @@ let originalConversationTitle = "";
 
 const DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY = 3;
 const MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY = 1;
-const MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY = 6;
+const MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY = 10;
 
 function normalizedAttachmentDownloadConcurrency(value) {
   const requested = Math.floor(Number(value));

@@ -50,7 +50,7 @@ import {
 
 const DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY = 3;
 const MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY = 1;
-const MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY = 6;
+const MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY = 10;
 
 function waitForDownloadCompletion(downloadId, signal) {
   return new Promise((resolve, reject) => {
