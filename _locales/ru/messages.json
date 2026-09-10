@@ -154,6 +154,9 @@
   "progressSendingBrowser": {
     "message": "Передаю архив браузеру…"
   },
+  "noActiveConversation": {
+    "message": "Нет активного чата для экспорта."
+  },
   "errorConversationId": {
     "message": "conversation_id не найден в URL"
   },

@@ -154,6 +154,9 @@
   "progressSendingBrowser": {
     "message": "Sending archive to the browser…"
   },
+  "noActiveConversation": {
+    "message": "No active conversation to export."
+  },
   "errorConversationId": {
     "message": "conversation_id was not found in the URL"
   },

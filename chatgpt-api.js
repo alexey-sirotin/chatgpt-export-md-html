@@ -2,6 +2,17 @@ import { t } from "./utils.js";
 
 const PAGE_ABORT_CONTROLLERS_KEY = "__chatgptExportAbortControllers";
 
+export function isActiveConversationData(data) {
+  return !!(
+    data &&
+    typeof data === "object" &&
+    typeof data.current_node === "string" &&
+    data.current_node &&
+    data.mapping &&
+    typeof data.mapping === "object"
+  );
+}
+
 export async function abortExportInPage(tabId, exportId) {
   if (!exportId) return;
   await chrome.scripting.executeScript({
@@ -33,16 +44,17 @@ export async function clearExportAbortInPage(tabId, exportId) {
 }
 
 export async function getConversationInPage(tabId, exportId = null) {
+  const noActiveConversation = t("noActiveConversation");
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
     args: [
-      t("errorConversationId"),
+      noActiveConversation,
       t("errorAccessToken"),
       PAGE_ABORT_CONTROLLERS_KEY,
       exportId
     ],
-    func: async (errorConversationId, errorAccessToken, registryKey, exportId) => {
+    func: async (noActiveConversation, errorAccessToken, registryKey, exportId) => {
       let signal;
       if (exportId) {
         const registry = globalThis[registryKey] ||= new Map();
@@ -54,7 +66,7 @@ export async function getConversationInPage(tabId, exportId = null) {
         signal = controller.signal;
       }
       const m = location.pathname.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      if (!m) throw new Error(errorConversationId);
+      if (!m) throw new Error(noActiveConversation);
       const conversationId = m[0];
 
       const sessionCacheKey = "__chatgptExportMdHtmlSessionCache";
@@ -81,6 +93,7 @@ export async function getConversationInPage(tabId, exportId = null) {
       return await res.json();
     }
   });
+  if (!isActiveConversationData(result)) throw new Error(noActiveConversation);
   return result;
 }
 

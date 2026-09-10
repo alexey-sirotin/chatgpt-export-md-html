@@ -11,6 +11,7 @@ let conversationId = "";
 let totalMessages = 0;
 let selectedMessages = 0;
 let hasAuthoritativeSelectionState = false;
+let hasActiveConversation = false;
 let originalConversationTitle = "";
 
 const DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY = 3;
@@ -117,6 +118,7 @@ function setWorking(working) {
   $("cancel").hidden = !working;
   $("cancel").disabled = !working;
   if (!working) {
+    syncConversationActionsUi();
     syncAttachmentOptionsUi();
     syncFormatOptionsUi();
   }
@@ -196,13 +198,27 @@ async function saveNames() {
   return { userName, assistantName };
 }
 
+function syncConversationActionsUi() {
+  const disabled = !!exportStartedAt || !hasActiveConversation;
+  for (const id of ["toggle", "all", "none"]) {
+    $(id).disabled = disabled;
+  }
+}
+
 function syncAttachmentOptionsUi() {
   $("separateAttachmentsFolder").disabled = !!exportStartedAt;
 }
 
 function syncFormatOptionsUi() {
   const anyFormat = $("exportMarkdown").checked || $("exportHtml").checked || $("exportJson").checked;
-  $("export").disabled = !!exportStartedAt || !anyFormat;
+  $("export").disabled = !!exportStartedAt || !hasActiveConversation || !anyFormat;
+}
+
+function showNoActiveConversation() {
+  hasActiveConversation = false;
+  syncConversationActionsUi();
+  syncFormatOptionsUi();
+  $("status").textContent = t("noActiveConversation");
 }
 
 async function loadOptions() {
@@ -278,6 +294,12 @@ async function refreshAuthoritativeSelectionState() {
       tabId,
       conversationId
     });
+    if (summary?.error === t("noActiveConversation")) {
+      hasActiveConversation = false;
+      syncConversationActionsUi();
+      syncFormatOptionsUi();
+      return false;
+    }
     if (!Number.isFinite(summary?.total) || !Number.isFinite(summary?.selected)) return false;
     totalMessages = summary.total;
     selectedMessages = summary.selected;
@@ -290,6 +312,7 @@ async function refreshAuthoritativeSelectionState() {
 
 async function init() {
   localizeStaticUi();
+  syncConversationActionsUi();
   await Promise.all([loadNames(), loadOptions()]);
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = activeTab?.id;
@@ -309,6 +332,15 @@ async function init() {
     });
     if (restoreProgress(progressState)) return;
 
+    if (!conversationId) {
+      showNoActiveConversation();
+      return;
+    }
+
+    hasActiveConversation = true;
+    syncConversationActionsUi();
+    syncFormatOptionsUi();
+
     // ChatGPT now virtualizes the conversation aggressively. On the first open
     // we build a compact logical-message index from the full conversation; later
     // popup opens can reuse it until the page observer sees a new turn or the
@@ -316,9 +348,16 @@ async function init() {
     startSelectionLoading();
     await refreshAuthoritativeSelectionState();
     stopSelectionLoading();
+    if (!hasActiveConversation) {
+      showNoActiveConversation();
+      return;
+    }
     $("status").textContent = selectionStatus(selectedMessages, totalMessages);
   } catch (e) {
     stopSelectionLoading();
+    hasActiveConversation = false;
+    syncConversationActionsUi();
+    syncFormatOptionsUi();
     $("status").textContent = t("openChatHint");
   }
 }
