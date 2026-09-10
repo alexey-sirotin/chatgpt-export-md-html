@@ -37,7 +37,17 @@ export function isVisibleMessage(msg) {
   ].includes(type)) return false;
 
   const role = msg.author?.role;
-  if (role === "user" || role === "assistant") return true;
+  if (role === "user") return true;
+
+  if (role === "assistant") {
+    // Tool invocations are stored as assistant messages too, but unlike a
+    // conversational reply they are addressed to a named tool. Use that
+    // structural signal instead of guessing from serialized command text.
+    const recipient = typeof msg.recipient === "string"
+      ? msg.recipient.trim()
+      : "";
+    return !recipient || recipient === "all";
+  }
 
   // Image-only replies can be represented in conversation mapping as tool
   // messages containing image_asset_pointer records. Keep only tool messages
