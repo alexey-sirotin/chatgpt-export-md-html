@@ -169,34 +169,6 @@ export function selectionSummaryFromRaw(rawBranch, selection) {
   return { total: groups.length, selected };
 }
 
-export function isInternalToolInvocationText(text) {
-  if (typeof text !== "string") return false;
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false;
-
-  try {
-    const value = JSON.parse(trimmed);
-    if (!value || Array.isArray(value) || typeof value !== "object") return false;
-    const keys = Object.keys(value);
-
-    // Older image-gen turns stored only the serialized { size, n } call as an
-    // assistant message. It is internal plumbing, not conversational text.
-    if (
-      keys.length === 2 &&
-      Object.hasOwn(value, "size") &&
-      Object.hasOwn(value, "n") &&
-      typeof value.size === "string" &&
-      /^\d+x\d+$/i.test(value.size) &&
-      Number.isInteger(value.n) &&
-      value.n > 0
-    ) return true;
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 export function referenceFallbackMarkdown(ref) {
   const items = Array.isArray(ref?.items) ? ref.items : [];
   const links = [];
@@ -304,11 +276,6 @@ export function cleanExportText(text, msg = null) {
     text = text.replaceAll("\uE200memcite\uE201", "");
     text = text.replace(/\uE200cite(?:\uE202[^\uE201]*)*\uE201/g, "");
   }
-
-  const trimmed = text.trim();
-  // Never interpret a user-pasted JSON snippet as internal plumbing. The
-  // structural tool-call filter is only for non-user nodes.
-  if (!isUserMessage && isInternalToolInvocationText(trimmed)) return null;
 
   return text;
 }
