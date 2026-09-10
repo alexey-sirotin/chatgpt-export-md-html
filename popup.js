@@ -1,3 +1,9 @@
+import {
+  DEVELOPMENT_ATTACHMENT_DOWNLOAD_CONCURRENCY,
+  getInstallType,
+  resolveAttachmentDownloadConcurrency
+} from "./runtime-mode.js";
+
 const $ = (id) => document.getElementById(id);
 const t = (key, substitutions) => {
   const args = Array.isArray(substitutions)
@@ -13,19 +19,7 @@ let selectedMessages = 0;
 let hasAuthoritativeSelectionState = false;
 let hasActiveConversation = false;
 let originalConversationTitle = "";
-
-const DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY = 3;
-const MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY = 1;
-const MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY = 10;
-
-function normalizedAttachmentDownloadConcurrency(value) {
-  const requested = Math.floor(Number(value));
-  if (!Number.isFinite(requested)) return DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY;
-  return Math.min(
-    MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY,
-    Math.max(MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY, requested)
-  );
-}
+let installType = null;
 
 async function send(type, payload = {}) {
   return chrome.tabs.sendMessage(tabId, { type, ...payload });
@@ -229,7 +223,7 @@ async function loadOptions() {
     includeOriginalLink: true,
     saveAttachments: true,
     separateAttachmentsFolder: true,
-    attachmentDownloadConcurrency: DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY
+    attachmentDownloadConcurrency: DEVELOPMENT_ATTACHMENT_DOWNLOAD_CONCURRENCY
   });
   $("exportMarkdown").checked = saved.exportMarkdown !== false;
   $("exportHtml").checked = saved.exportHtml !== false;
@@ -238,7 +232,7 @@ async function loadOptions() {
   $("saveAttachments").checked = saved.saveAttachments !== false;
   $("separateAttachmentsFolder").checked = saved.separateAttachmentsFolder !== false;
   $("attachmentDownloadConcurrency").value = String(
-    normalizedAttachmentDownloadConcurrency(saved.attachmentDownloadConcurrency)
+    resolveAttachmentDownloadConcurrency(saved.attachmentDownloadConcurrency, installType)
   );
   syncAttachmentOptionsUi();
   syncFormatOptionsUi();
@@ -251,8 +245,9 @@ async function saveOptions() {
   const includeOriginalLink = $("includeOriginalLink").checked;
   const saveAttachments = $("saveAttachments").checked;
   const separateAttachmentsFolder = $("separateAttachmentsFolder").checked;
-  const attachmentDownloadConcurrency = normalizedAttachmentDownloadConcurrency(
-    $("attachmentDownloadConcurrency").value
+  const attachmentDownloadConcurrency = resolveAttachmentDownloadConcurrency(
+    $("attachmentDownloadConcurrency").value,
+    installType
   );
   $("attachmentDownloadConcurrency").value = String(attachmentDownloadConcurrency);
   await chrome.storage.local.set({
@@ -312,6 +307,8 @@ async function refreshAuthoritativeSelectionState() {
 
 async function init() {
   localizeStaticUi();
+  installType = await getInstallType();
+  $("attachmentDownloadConcurrencyOption").hidden = installType !== "development";
   syncConversationActionsUi();
   await Promise.all([loadNames(), loadOptions()]);
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
