@@ -3,6 +3,7 @@ import {
   branchExcludingFromRaw,
   cleanExportText,
   isInternalToolInvocationText,
+  isVisibleMessage,
   selectedBranchFromRaw
 } from "../conversation.js";
 
@@ -187,5 +188,36 @@ describe("legacy internal image-generation frames", () => {
       author: { role: "user" },
       metadata: {}
     })).toBe(text);
+  });
+});
+
+describe("tool invocation visibility", () => {
+  it("hides assistant messages addressed to tools", () => {
+    expect(isVisibleMessage({
+      author: { role: "assistant" },
+      recipient: "api_tool.call_tool",
+      content: {
+        content_type: "code",
+        text: '{"path":"/GitHub/tool","args":{}}'
+      },
+      metadata: {}
+    })).toBe(false);
+  });
+
+  it("keeps assistant replies addressed to the conversation", () => {
+    expect(isVisibleMessage({
+      author: { role: "assistant" },
+      recipient: "all",
+      content: { content_type: "text", parts: ["Visible reply"] },
+      metadata: {}
+    })).toBe(true);
+  });
+
+  it("keeps legacy assistant replies without a recipient", () => {
+    expect(isVisibleMessage({
+      author: { role: "assistant" },
+      content: { content_type: "text", parts: ["Legacy reply"] },
+      metadata: {}
+    })).toBe(true);
   });
 });
