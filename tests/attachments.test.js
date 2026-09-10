@@ -109,6 +109,40 @@ describe("attachment normalization", () => {
 
     expect(attachmentRecords(msg)).toEqual([]);
   });
+
+  it("preserves metadata for plain file ids with a gizmo query suffix", () => {
+    const msg = {
+      id: "project-image-reference",
+      author: { role: "user" },
+      content: {
+        content_type: "multimodal_text",
+        parts: [{
+          content_type: "image_asset_pointer",
+          asset_pointer: "sediment://file_project_image",
+          width: 1024,
+          height: 1024
+        }]
+      },
+      metadata: {
+        attachments: [{
+          id: "file_project_image?gizmo_id=g-p-project",
+          name: "Known image name.png",
+          mime_type: "image/png"
+        }]
+      }
+    };
+
+    expect(attachmentRecords(msg)).toEqual([
+      expect.objectContaining({
+        id: "file_project_image",
+        originalName: "Known image name.png",
+        mimeType: "image/png",
+        isImage: true,
+        width: 1024,
+        height: 1024
+      })
+    ]);
+  });
 });
 
 describe("sandbox attachment links", () => {
