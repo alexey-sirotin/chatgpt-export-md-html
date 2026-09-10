@@ -20,6 +20,7 @@ COMMON_ROOT_FILES = {
     "popup.html",
     "popup.js",
     "render.js",
+    "runtime-mode.js",
     "selection-cache-observer.js",
     "selection-index.js",
     "selection-matcher.js",

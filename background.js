@@ -37,20 +37,17 @@ import {
   isAbortError,
   throwIfAborted
 } from "./cancellation.js";
+import { mapWithConcurrency } from "./async-pool.js";
 import {
-  mapWithConcurrency,
-  normalizeConcurrency
-} from "./async-pool.js";
+  getInstallType,
+  resolveAttachmentDownloadConcurrency
+} from "./runtime-mode.js";
 import { buildMarkdownExport, buildHtmlExport } from "./render.js";
 import { makeZip } from "./zip.js";
 import {
   createDownloadObjectUrl,
   revokeDownloadObjectUrl
 } from "./download-url.js";
-
-const DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY = 3;
-const MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY = 1;
-const MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY = 10;
 
 function waitForDownloadCompletion(downloadId, signal) {
   return new Promise((resolve, reject) => {
@@ -508,13 +505,9 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (!exportMarkdown && !exportHtml && !exportJsonEnabled) throw new Error(t("chooseFormat"));
     const saveAttachments = msg.saveAttachments !== false;
     const separateAttachmentsFolder = msg.separateAttachmentsFolder !== false;
-    const attachmentDownloadConcurrency = normalizeConcurrency(
+    const attachmentDownloadConcurrency = resolveAttachmentDownloadConcurrency(
       msg.attachmentDownloadConcurrency,
-      {
-        defaultValue: DEFAULT_ATTACHMENT_DOWNLOAD_CONCURRENCY,
-        min: MIN_ATTACHMENT_DOWNLOAD_CONCURRENCY,
-        max: MAX_ATTACHMENT_DOWNLOAD_CONCURRENCY
-      }
+      await getInstallType()
     );
     const folder = separateAttachmentsFolder ? exportName : "";
     const mediaFiles = [];

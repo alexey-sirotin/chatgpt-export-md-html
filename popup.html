@@ -60,6 +60,7 @@
       color: var(--fg);
       cursor: pointer;
     }
+    .option[hidden] { display: none; }
     .formats .option { margin: 3px 0 5px; }
     .option input { width: auto; margin: 0; accent-color: currentColor; }
     .option select {
@@ -124,7 +125,7 @@
     <input id="separateAttachmentsFolder" type="checkbox" checked>
     <span data-i18n="saveAttachmentsSeparate"></span>
   </label>
-  <label class="option">
+  <label id="attachmentDownloadConcurrencyOption" class="option" hidden>
     <span data-i18n="attachmentDownloadConcurrency"></span>
     <select id="attachmentDownloadConcurrency">
       <option value="1">1</option>
@@ -145,6 +146,6 @@
   <button id="export" data-i18n="exportSelected"></button>
   <button id="cancel" data-i18n="cancelExport" hidden></button>
   <div id="status"></div>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
