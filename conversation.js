@@ -169,58 +169,6 @@ export function selectionSummaryFromRaw(rawBranch, selection) {
   return { total: groups.length, selected };
 }
 
-export function isInternalToolInvocationText(text) {
-  if (typeof text !== "string") return false;
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false;
-
-  try {
-    const value = JSON.parse(trimmed);
-    if (!value || Array.isArray(value) || typeof value !== "object") return false;
-    const keys = Object.keys(value);
-
-    // Older image-gen turns stored only the serialized { size, n } call as an
-    // assistant message. It is internal plumbing, not conversational text.
-    if (
-      keys.length === 2 &&
-      Object.hasOwn(value, "size") &&
-      Object.hasOwn(value, "n") &&
-      typeof value.size === "string" &&
-      /^\d+x\d+$/i.test(value.size) &&
-      Number.isInteger(value.n) &&
-      value.n > 0
-    ) return true;
-
-    // Internal image_gen calls seen in newer conversation mapping. `prompt` is
-    // not guaranteed to be present (for example on an image edit/regeneration).
-    const imageGenAllowed = new Set([
-      "prompt", "size", "n", "transparent_background",
-      "is_style_transfer", "referenced_image_ids"
-    ]);
-    const imageGenRequired = [
-      "size", "n", "transparent_background",
-      "is_style_transfer", "referenced_image_ids"
-    ];
-    if (
-      imageGenRequired.every(key => Object.hasOwn(value, key)) &&
-      keys.every(key => imageGenAllowed.has(key))
-    ) return true;
-
-    // Internal web-search invocation observed between the assistant's preliminary
-    // and final visible replies. Keep both conversational replies, hide only the
-    // serialized call arguments.
-    const webSearchAllowed = new Set(["system1_search_query", "response_length"]);
-    if (
-      Array.isArray(value.system1_search_query) &&
-      keys.every(key => webSearchAllowed.has(key))
-    ) return true;
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 export function referenceFallbackMarkdown(ref) {
   const items = Array.isArray(ref?.items) ? ref.items : [];
   const links = [];
@@ -328,13 +276,6 @@ export function cleanExportText(text, msg = null) {
     text = text.replaceAll("\uE200memcite\uE201", "");
     text = text.replace(/\uE200cite(?:\uE202[^\uE201]*)*\uE201/g, "");
   }
-
-  // Internal placeholder messages should not become visible chat messages.
-  const trimmed = text.trim();
-  if (/^\{\s*"skipped_mainline"\s*:\s*true\s*\}$/.test(trimmed)) return null;
-  // Never interpret a user-pasted JSON snippet as internal plumbing. The
-  // structural tool-call filter is only for non-user nodes.
-  if (!isUserMessage && isInternalToolInvocationText(trimmed)) return null;
 
   return text;
 }

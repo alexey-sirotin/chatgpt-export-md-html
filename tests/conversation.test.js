@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   branchExcludingFromRaw,
   cleanExportText,
-  isInternalToolInvocationText,
   isVisibleMessage,
   selectedBranchFromRaw
 } from "../conversation.js";
@@ -164,33 +163,6 @@ describe("conversation selection", () => {
   });
 });
 
-describe("legacy internal image-generation frames", () => {
-  it("recognizes old {size,n} image-generation invocation JSON", () => {
-    expect(isInternalToolInvocationText('{"size":"1024x1024","n":1}')).toBe(true);
-    expect(isInternalToolInvocationText('{"n":1,"size":"1024x1536"}')).toBe(true);
-  });
-
-  it("does not classify similar arbitrary JSON as an internal invocation", () => {
-    expect(isInternalToolInvocationText(
-      '{"size":"1024x1024","n":1,"note":"user data"}'
-    )).toBe(false);
-  });
-
-  it("filters the invocation from assistant text but preserves the same literal user text", () => {
-    const text = '{"size":"1024x1024","n":1}';
-
-    expect(cleanExportText(text, {
-      author: { role: "assistant" },
-      metadata: {}
-    })).toBeNull();
-
-    expect(cleanExportText(text, {
-      author: { role: "user" },
-      metadata: {}
-    })).toBe(text);
-  });
-});
-
 describe("tool invocation visibility", () => {
   it("hides assistant messages addressed to tools", () => {
     expect(isVisibleMessage({
@@ -219,5 +191,49 @@ describe("tool invocation visibility", () => {
       content: { content_type: "text", parts: ["Legacy reply"] },
       metadata: {}
     })).toBe(true);
+  });
+
+  it("uses recipient structure instead of modern tool-call text shapes", () => {
+    const imageCall = JSON.stringify({
+      prompt: null,
+      size: "1024x1024",
+      n: 1,
+      transparent_background: false,
+      is_style_transfer: false,
+      referenced_image_ids: null
+    });
+    const webCall = JSON.stringify({
+      system1_search_query: [{ q: "example" }],
+      response_length: "short"
+    });
+
+    expect(isVisibleMessage({
+      author: { role: "assistant" },
+      recipient: "image_gen",
+      content: { content_type: "code", text: imageCall },
+      metadata: {}
+    })).toBe(false);
+    expect(isVisibleMessage({
+      author: { role: "assistant" },
+      recipient: "web.run",
+      content: { content_type: "code", text: webCall },
+      metadata: {}
+    })).toBe(false);
+  });
+
+  it("does not text-filter skipped_mainline placeholders", () => {
+    const text = '{"skipped_mainline":true}';
+
+    expect(cleanExportText(text, {
+      author: { role: "assistant" },
+      recipient: "image_gen",
+      metadata: {}
+    })).toBe(text);
+    expect(isVisibleMessage({
+      author: { role: "assistant" },
+      recipient: "image_gen",
+      content: { content_type: "code", text },
+      metadata: {}
+    })).toBe(false);
   });
 });
