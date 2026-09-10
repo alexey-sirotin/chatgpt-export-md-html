@@ -234,7 +234,7 @@
     "message": "Не удалось создать URL для ZIP-архива"
   },
   "errorReceiveDownloadObjectUrl": {
-    "message": "Не удалось получить ZIP Blob URL"
+    "message": "Не удалось получить URL для ZIP-архива"
   },
   "errorSandboxAttachmentContext": {
     "message": "Для sandbox-вложения отсутствует контекст чата или сообщения"
