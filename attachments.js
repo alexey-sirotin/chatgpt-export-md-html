@@ -76,7 +76,10 @@ function extractFileId(value) {
   const sediment = value.match(/^sediment:\/\/(file_[A-Za-z0-9_-]+)/);
   if (sediment) return sediment[1];
 
-  const plain = value.match(/^(file_[A-Za-z0-9_-]+)$/);
+  // Older project chats can append a gizmo query to an otherwise plain file
+  // id in metadata.attachments, e.g. file_abc...?gizmo_id=g-p-.... Strip the
+  // suffix so metadata can merge with the matching sediment asset pointer.
+  const plain = value.match(/^(file_[A-Za-z0-9_-]+)(?:[?#].*)?$/);
   if (plain) return plain[1];
 
   try {
