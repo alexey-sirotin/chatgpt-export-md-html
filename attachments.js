@@ -159,22 +159,18 @@ export function attachmentRecords(msg, safeUrls = []) {
     }
   }
 
-  // Recursively inspect the whole message. This catches user uploads,
-  // generated images, image_asset_pointer records and newer payload shapes.
-  walkObject(msg, obj => {
+  // Recursively inspect message content. File ids elsewhere in the message can
+  // describe citations or tool metadata rather than attachments owned by this
+  // message, so walking the whole message causes duplicates and false files.
+  // Explicit metadata.attachments were already handled above.
+  walkObject(msg.content, obj => {
     let fileId = null;
 
     for (const [k, v] of Object.entries(obj)) {
       if (typeof v !== "string") continue;
       if (
-        /asset_pointer|file_id|fileId|download_url|content_url|image_url|url|src/i.test(k)
+        /^(?:asset_pointer|file_id|fileId|download_url|content_url|image_url|url|src)$/i.test(k)
       ) {
-        fileId = extractFileId(v) || fileId;
-      }
-    }
-
-    if (!fileId) {
-      for (const v of Object.values(obj)) {
         fileId = extractFileId(v) || fileId;
       }
     }
