@@ -154,6 +154,9 @@
   "progressSendingBrowser": {
     "message": "Передаю архив браузеру…"
   },
+  "noActiveConversation": {
+    "message": "Нет активного чата для экспорта."
+  },
   "errorConversationId": {
     "message": "conversation_id не найден в URL"
   },
@@ -231,7 +234,7 @@
     "message": "Не удалось создать URL для ZIP-архива"
   },
   "errorReceiveDownloadObjectUrl": {
-    "message": "Не удалось получить URL для ZIP-архива"
+    "message": "Не удалось получить ZIP Blob URL"
   },
   "errorSandboxAttachmentContext": {
     "message": "Для sandbox-вложения отсутствует контекст чата или сообщения"
