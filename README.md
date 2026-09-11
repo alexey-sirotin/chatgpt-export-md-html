@@ -2,7 +2,7 @@
 
 A browser extension for exporting the current ChatGPT conversation branch to local Markdown, HTML and JSON files, with attachments saved alongside the export.
 
-Current version: **0.1.36**
+Current version: **0.1.37**
 
 ## Features
 
@@ -45,7 +45,7 @@ There is currently no browser-store release. Ready-to-use browser packages are a
 
 ### Firefox
 
-Firefox 128 or later is supported.
+Firefox 140 or later is supported.
 
 1. Download `chatgpt-export-md-html-<version>-firefox.zip` from the latest GitHub Release.
 2. Unpack the archive.
@@ -107,7 +107,9 @@ Firefox support uses the same export, selection, rendering, attachment and ZIP c
 - Chromium uses a background service worker plus an offscreen document for Blob/Object URL creation.
 - Firefox uses a Manifest V3 background script and creates Blob/Object URLs directly in the background document.
 
-Release packaging is automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission and Firefox-specific Gecko metadata. The Firefox package targets Firefox 128 or later.
+Release packaging is automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission and Firefox-specific Gecko metadata. The Firefox package targets Firefox 140 or later.
+
+The Firefox package declares the data categories it must handle to retrieve and export the active conversation. Firefox presents this declaration through its built-in installation consent experience; the developer does not receive this data.
 
 Both packaged variants have been live-tested without manifest warnings. Firefox testing has covered normal export, selective-message export, attachment saving and a roughly 160 MB / 75-attachment stress test.
 
@@ -127,6 +129,8 @@ The extension runs locally in the browser.
 It communicates with `chatgpt.com` only to read the current conversation and download files referenced by that conversation. It does not send conversation contents to third-party servers and contains no analytics or telemetry.
 
 Extension preferences and temporary per-session UI/cache state are stored using browser extension storage APIs. The offscreen document used by Chromium for large downloads is part of the extension and does not contact an external service.
+
+See the full [Privacy Policy](PRIVACY.md) for the data-handling, retention and Chrome Web Store Limited Use disclosures.
 
 ## Project structure
 

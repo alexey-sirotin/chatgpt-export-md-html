@@ -31,7 +31,7 @@ copy_tracked_files() {
   local target="$1"
   while IFS= read -r path; do
     case "$path" in
-      .github/*|scripts/*|tests/*|package.json|package-lock.json|README.md|LICENSE|.gitignore)
+      .github/*|scripts/*|tests/*|package.json|package-lock.json|README.md|PRIVACY.md|LICENSE|.gitignore)
         continue
         ;;
     esac
@@ -69,7 +69,15 @@ firefox['background'] = {
 firefox['browser_specific_settings'] = {
     'gecko': {
         'id': 'chatgpt-export-md-html@alexey-sirotin',
-        'strict_min_version': '128.0',
+        'strict_min_version': '140.0',
+        'data_collection_permissions': {
+            'required': [
+                'authenticationInfo',
+                'browsingActivity',
+                'personalCommunications',
+                'websiteContent',
+            ],
+        },
     }
 }
 
