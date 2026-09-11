@@ -189,6 +189,7 @@ def check_firefox_manifest(source, packaged, archive):
     if gecko.get("data_collection_permissions") != {
         "required": [
             "authenticationInfo",
+            "browsingActivity",
             "personalCommunications",
             "websiteContent",
         ]
