@@ -40,6 +40,7 @@ FORBIDDEN_FILES = {
     ".gitignore",
     "LICENSE",
     "README.md",
+    "PRIVACY.md",
     "package.json",
     "package-lock.json",
 }
@@ -183,8 +184,16 @@ def check_firefox_manifest(source, packaged, archive):
     gecko = packaged.get("browser_specific_settings", {}).get("gecko", {})
     if gecko.get("id") != "chatgpt-export-md-html@alexey-sirotin":
         fail(f"{archive.name} has wrong Firefox extension id")
-    if gecko.get("strict_min_version") != "128.0":
+    if gecko.get("strict_min_version") != "140.0":
         fail(f"{archive.name} has wrong Firefox minimum version")
+    if gecko.get("data_collection_permissions") != {
+        "required": [
+            "authenticationInfo",
+            "personalCommunications",
+            "websiteContent",
+        ]
+    }:
+        fail(f"{archive.name} has wrong Firefox data collection permissions")
 
 
 def main():
