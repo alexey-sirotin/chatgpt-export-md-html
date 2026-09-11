@@ -73,6 +73,7 @@ firefox['browser_specific_settings'] = {
         'data_collection_permissions': {
             'required': [
                 'authenticationInfo',
+                'browsingActivity',
                 'personalCommunications',
                 'websiteContent',
             ],
