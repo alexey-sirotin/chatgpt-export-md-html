@@ -19,6 +19,7 @@ COMMON_ROOT_FILES = {
     "download-url.js",
     "manifest.json",
     "popup.html",
+    "platform.js",
     "popup.js",
     "render.js",
     "runtime-mode.js",
