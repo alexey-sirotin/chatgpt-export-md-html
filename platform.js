@@ -1,10 +1,5 @@
 import {
   getConversationInPage,
-  conversationId(data) {
-    return data?.conversation_id || "";
-  },
-  buildSelectionIndex: buildChatGPTSelectionIndex,
-  selectBranch: selectChatGPTBranch,
   downloadAttachmentInPage,
   abortExportInPage,
   clearExportAbortInPage
@@ -37,7 +32,13 @@ export const chatgptPlatform = {
     }
   },
 
+  conversationId(data) {
+    return data?.conversation_id || "";
+  },
+
   getConversationInPage,
+  buildSelectionIndex: buildChatGPTSelectionIndex,
+  selectBranch: selectChatGPTBranch,
   downloadAttachmentInPage,
   abortExportInPage,
   clearExportAbortInPage,
