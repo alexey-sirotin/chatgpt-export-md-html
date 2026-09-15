@@ -1,15 +1,41 @@
-function markdownImage(image) {
-  const url = typeof image?.url === "string" ? image.url.trim() : "";
-  if (!url) return "";
+function remoteImageAttachment(image) {
+  const remoteUrl = typeof image?.url === "string" ? image.url.trim() : "";
+  if (!remoteUrl) return null;
+
+  let pathName = "";
+  try {
+    pathName = new URL(remoteUrl).pathname.split("/").filter(Boolean).at(-1) || "";
+  } catch {}
 
   const title = String(image?.title || image?.source || "Image")
-    .replace(/[\[\]]/g, "")
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
     .trim() || "Image";
-  const target = typeof image?.page_url === "string" && image.page_url.trim()
-    ? image.page_url.trim()
-    : url;
+  const originalName = pathName && /\.[A-Za-z0-9]{1,10}$/.test(pathName)
+    ? decodeURIComponent(pathName)
+    : title;
 
-  return "[Image: " + title + "](" + url + ")" + (target !== url ? " ([source](" + target + "))" : "");
+  const ext = (pathName.match(/\.([A-Za-z0-9]{2,5})(?:$|[?#])/i)?.[1] || "").toLowerCase();
+  const mimeType = ext === "png"
+    ? "image/png"
+    : ["jpg", "jpeg"].includes(ext)
+      ? "image/jpeg"
+      : ext === "webp"
+        ? "image/webp"
+        : ext === "gif"
+          ? "image/gif"
+          : "application/octet-stream";
+
+  return {
+    source: "claude-remote-image",
+    id: image?.id || remoteUrl,
+    remoteUrl,
+    sourceUrl: typeof image?.page_url === "string" ? image.page_url.trim() || null : null,
+    originalName,
+    title,
+    mimeType,
+    isImage: true
+  };
 }
 
 function extractClaudeContent(message, data) {
@@ -44,8 +70,9 @@ function extractClaudeContent(message, data) {
       }
 
       if (item?.type === "image_gallery" && Array.isArray(item.images)) {
-        const images = item.images.map(markdownImage).filter(Boolean);
-        if (images.length) textParts.push(images.join("\n\n"));
+        attachments.push(
+          ...item.images.map(remoteImageAttachment).filter(Boolean)
+        );
       }
     }
   }
