@@ -9,7 +9,7 @@ function markdownImage(image) {
     ? image.page_url.trim()
     : url;
 
-  return "[![" + title + "](" + url + ")](" + target + ")";
+  return "[Image: " + title + "](" + url + ")" + (target !== url ? " ([source](" + target + "))" : "");
 }
 
 function extractClaudeContent(message, data) {
@@ -33,7 +33,6 @@ function extractClaudeContent(message, data) {
           originalName: item.name || item.file_path.split("/").filter(Boolean).at(-1) || null,
           mimeType: item.mime_type || "application/octet-stream",
           conversationId: data?.uuid || null,
-          organizationId: data?.__organizationId || null
         });
         continue;
       }
