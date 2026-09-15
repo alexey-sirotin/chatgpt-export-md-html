@@ -111,12 +111,72 @@ function tableCellHtml(tag, value, alignment) {
   return `<${tag}${cls}>${inlineMarkdownToHtml(value)}</${tag}>`;
 }
 
+function listEntry(line) {
+  const match = String(line ?? "").match(/^(\s*)([-+*]|\d+[.)])\s+(.+)$/);
+  if (!match) return null;
+  const indent = match[1].replaceAll("\t", "    ").length;
+  return {
+    indent,
+    type: /^\d/.test(match[2]) ? "ol" : "ul",
+    text: match[3]
+  };
+}
+
+function renderListEntries(entries, start, indent) {
+  const type = entries[start].type;
+  const out = [`<${type}>`];
+  let index = start;
+
+  while (index < entries.length) {
+    const entry = entries[index];
+    if (entry.indent < indent || entry.indent !== indent || entry.type !== type) break;
+
+    let item = `<li>${inlineMarkdownToHtml(entry.text)}`;
+    index++;
+
+    while (index < entries.length && entries[index].indent > indent) {
+      const nested = renderListEntries(entries, index, entries[index].indent);
+      item += nested.html;
+      index = nested.next;
+    }
+
+    item += "</li>";
+    out.push(item);
+  }
+
+  out.push(`</${type}>`);
+  return { html: out.join("\n"), next: index };
+}
+
+function renderListBlock(lines, start) {
+  const entries = [];
+  let index = start;
+
+  while (index < lines.length) {
+    const entry = listEntry(lines[index]);
+    if (!entry) break;
+    entries.push(entry);
+    index++;
+  }
+
+  if (!entries.length) return null;
+
+  const out = [];
+  let position = 0;
+  while (position < entries.length) {
+    const rendered = renderListEntries(entries, position, entries[position].indent);
+    out.push(rendered.html);
+    position = rendered.next;
+  }
+
+  return { html: out.join("\n"), nextLine: index };
+}
+
 function markdownToHtml(markdown) {
   const lines = String(markdown ?? "").replaceAll("\r\n", "\n").split("\n");
   const out = [];
   let paragraph = [];
   let quote = [];
-  let listType = null;
   let inFence = false;
   let fenceLang = "";
   let codeLines = [];
@@ -131,17 +191,6 @@ function markdownToHtml(markdown) {
     out.push(`<blockquote>${quote.map(inlineMarkdownToHtml).join("<br>")}</blockquote>`);
     quote = [];
   };
-  const closeList = () => {
-    if (!listType) return;
-    out.push(`</${listType}>`);
-    listType = null;
-  };
-  const openList = type => {
-    if (listType === type) return;
-    closeList();
-    listType = type;
-    out.push(`<${type}>`);
-  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -150,7 +199,6 @@ function markdownToHtml(markdown) {
       if (!inFence) {
         flushParagraph();
         flushQuote();
-        closeList();
         inFence = true;
         fenceLang = fence[1] || "";
         codeLines = [];
@@ -172,7 +220,6 @@ function markdownToHtml(markdown) {
     if (!line.trim()) {
       flushParagraph();
       flushQuote();
-      closeList();
       continue;
     }
 
@@ -183,7 +230,6 @@ function markdownToHtml(markdown) {
     if (headerCells && alignments && headerCells.length === alignments.length) {
       flushParagraph();
       flushQuote();
-      closeList();
 
       const columnCount = headerCells.length;
       const headerHtml = headerCells
@@ -220,7 +266,6 @@ function markdownToHtml(markdown) {
     if (heading) {
       flushParagraph();
       flushQuote();
-      closeList();
       const level = heading[1].length;
       out.push(`<h${level}>${inlineMarkdownToHtml(heading[2])}</h${level}>`);
       continue;
@@ -229,29 +274,19 @@ function markdownToHtml(markdown) {
     const blockquote = line.match(/^>\s?(.*)$/);
     if (blockquote) {
       flushParagraph();
-      closeList();
       quote.push(blockquote[1]);
       continue;
     }
     flushQuote();
 
-    const unordered = line.match(/^\s*[-+*]\s+(.+)$/);
-    if (unordered) {
+    const listBlock = renderListBlock(lines, i);
+    if (listBlock) {
       flushParagraph();
-      openList("ul");
-      out.push(`<li>${inlineMarkdownToHtml(unordered[1])}</li>`);
+      out.push(listBlock.html);
+      i = listBlock.nextLine - 1;
       continue;
     }
 
-    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
-    if (ordered) {
-      flushParagraph();
-      openList("ol");
-      out.push(`<li>${inlineMarkdownToHtml(ordered[1])}</li>`);
-      continue;
-    }
-
-    closeList();
     paragraph.push(line);
   }
 
@@ -261,7 +296,6 @@ function markdownToHtml(markdown) {
   }
   flushParagraph();
   flushQuote();
-  closeList();
   return out.join("\n");
 }
 
