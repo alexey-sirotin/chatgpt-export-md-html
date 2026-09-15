@@ -193,6 +193,25 @@ describe("tool invocation visibility", () => {
     })).toBe(true);
   });
 
+  it("hides tool result text even when it references an ordinary file", () => {
+    expect(isVisibleMessage({
+      author: { role: "tool" },
+      content: {
+        content_type: "text",
+        parts: [{
+          file_id: "file_search_result",
+          filename: "source.js",
+          mime_type: "text/javascript"
+        }, "Page: turn10\nShowing 7 of 7 lines."]
+      },
+      metadata: {}
+    })).toBe(false);
+  });
+
+  it("keeps image-only tool results", () => {
+    expect(isVisibleMessage(imageToolNode("visible-image").message)).toBe(true);
+  });
+
   it("uses recipient structure instead of modern tool-call text shapes", () => {
     const imageCall = JSON.stringify({
       prompt: null,
