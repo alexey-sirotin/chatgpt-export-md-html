@@ -3,7 +3,6 @@ import {
   safeName,
   filenameWithExtension,
   uniqueFilename,
-  isoUtc,
   extFromMime,
   enc,
   markdownHref
@@ -13,8 +12,7 @@ import {
   rawBranchFromCurrent,
   selectedBranchFromRaw,
   branchExcludingFromRaw,
-  logicalSelectionGroups,
-  textParts
+  logicalSelectionGroups
 } from "./conversation.js";
 import {
   buildSelectionIndex,
@@ -22,10 +20,8 @@ import {
   selectionIndexKnownIds,
   SELECTION_INDEX_SCHEMA_VERSION
 } from "./selection-index.js";
-import {
-  attachmentRecords,
-  replaceSandboxLinkDestinations
-} from "./attachments.js";
+import { replaceSandboxLinkDestinations } from "./attachments.js";
+import { normalizeChatGPTConversation } from "./chatgpt-normalize.js";
 import {
   getConversationInPage,
   downloadAttachmentInPage,
@@ -486,13 +482,17 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     }
 
     const omission = omissionBoundaries(rawBranch, branch);
-    await reportExportProgress(tabId, t("progressPreparingMessages", branch.length));
+    const conversation = normalizeChatGPTConversation(data, branch, omission);
+    await reportExportProgress(
+      tabId,
+      t("progressPreparingMessages", conversation.messages.length)
+    );
 
-    const exportName = safeName(msg.exportName || data.title);
+    const exportName = safeName(msg.exportName || conversation.title);
     const conversationTitle = (typeof msg.originalTitle === "string" && msg.originalTitle.trim())
       ? msg.originalTitle.trim().replace(/[\r\n]+/g, " ")
-      : (typeof data.title === "string" && data.title.trim())
-        ? data.title.trim().replace(/[\r\n]+/g, " ")
+      : (typeof conversation.title === "string" && conversation.title.trim())
+        ? conversation.title.trim().replace(/[\r\n]+/g, " ")
         : exportName;
     const defaultUserName = t("defaultUserName");
     const defaultAssistantName = t("defaultAssistantName");
@@ -518,48 +518,35 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const attachmentJobs = [];
     let outputMessageIndex = 0;
     let branchIndex = 0;
-    let omissionPending = omission.omittedAtStart;
 
-    for (const node of branch) {
+    for (const normalizedMessage of conversation.messages) {
       throwIfAborted(signal, t("exportCanceled"));
       branchIndex++;
 
       if (
         branchIndex === 1 ||
-        branchIndex === branch.length ||
+        branchIndex === conversation.messages.length ||
         branchIndex % 10 === 0
       ) {
         await reportExportProgress(
           tabId,
-          t("progressProcessingMessages", [branchIndex, branch.length])
+          t("progressProcessingMessages", [branchIndex, conversation.messages.length])
         );
       }
 
-      if (omission.beforeNodes.has(node)) omissionPending = true;
-
-      const msgObj = node.message;
-      const sourceRole = msgObj.author?.role || "unknown";
-      const role = sourceRole === "tool" ? "assistant" : sourceRole;
-      const rawTexts = textParts(msgObj);
-      const attachments = attachmentRecords(msgObj, data.safe_urls || []);
-
-      if (!rawTexts.length && !attachments.length) continue;
-
       outputMessageIndex++;
       const prepared = {
-        node,
-        msgObj,
-        sourceRole,
-        role,
-        rawTexts,
-        omittedBefore: omissionPending,
+        message: normalizedMessage,
+        role: normalizedMessage.role,
+        rawTexts: normalizedMessage.content
+          .filter(part => part?.type === "text" && typeof part.text === "string")
+          .map(part => part.text),
         outputMessageIndex,
         attachments: []
       };
-      omissionPending = false;
 
       let attachmentIndex = 0;
-      for (const attachment of attachments) {
+      for (const attachment of normalizedMessage.attachments || []) {
         attachmentIndex++;
         const job = {
           prepared,
@@ -608,14 +595,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       async job => {
         throwIfAborted(signal, t("exportCanceled"));
 
-        const { attachment: a, prepared } = job;
-        const downloadRecord = a.source === "sandbox"
-          ? {
-              ...a,
-              conversationId: data.conversation_id,
-              messageId: prepared.msgObj.id
-            }
-          : a;
+        const { attachment: a } = job;
+        const downloadRecord = a;
 
         if (saveAttachments) {
           if (!a.id && a.source !== "sandbox") {
@@ -692,9 +673,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
     for (const prepared of preparedMessages) {
       const {
-        node,
-        msgObj,
-        sourceRole,
+        message,
         role,
         rawTexts,
         outputMessageIndex
@@ -762,33 +741,27 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         replaceSandboxLinkDestinations(text, sandboxHrefReplacements)
       );
       jsonMessages.push({
-        id: msgObj.id,
-        parentId: node.parent,
+        id: message.id,
+        parentId: message.parentId,
         role,
-        sourceRole,
+        sourceRole: message.sourceRole,
         authorName: role === "user" ? userName : assistantName,
-        createdAt: isoUtc(msgObj.create_time),
-        model:
-          msgObj.metadata?.model_slug ||
-          msgObj.metadata?.resolved_model_slug ||
-          null,
-        ...(prepared.omittedBefore ? { omittedBefore: true } : {}),
+        createdAt: message.createdAt,
+        model: message.model,
+        ...(message.omittedBefore ? { omittedBefore: true } : {}),
+        ...(message.omittedAfter ? { omittedAfter: true } : {}),
         content: texts.map(text => ({ type: "text", text, format: "markdown" })),
         attachments: jsonAtt
       });
     }
 
-    if (omission.omittedAtEnd && jsonMessages.length) {
-      jsonMessages[jsonMessages.length - 1].omittedAfter = true;
-    }
-
-    const conversationUrl = `https://chatgpt.com/c/${data.conversation_id}`;
+    const conversationUrl = conversation.conversationUrl;
     const exportJson = {
       schemaVersion: 1,
       exporter: "chatgpt-export-md-html",
       exporterVersion: chrome.runtime.getManifest().version,
       title: exportName,
-      conversationId: data.conversation_id,
+      conversationId: conversation.conversationId,
       ...(includeOriginalLink ? { conversationUrl } : {}),
       exportedAt: new Date().toISOString(),
       userName,
