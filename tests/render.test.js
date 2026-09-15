@@ -150,7 +150,7 @@ describe("Claude remote image fallback", () => {
     }]
   };
 
-  it("keeps the original remote links in Markdown when archiving fails", () => {
+  it("renders the remote image as a clickable Markdown image when archiving fails", () => {
     const markdown = buildMarkdownExport({
       title: "Remote image",
       conversationUrl: null,
@@ -159,12 +159,12 @@ describe("Claude remote image fallback", () => {
     });
 
     expect(markdown).toContain(
-      "[Image: Example image](https://example.com/image.jpg) ([source](https://example.com/page))"
+      "[![Example image](https://example.com/image.jpg)](https://example.com/page)"
     );
     expect(markdown).not.toContain("htmlAttachmentFailed");
   });
 
-  it("keeps the original remote links in HTML when archiving fails", () => {
+  it("renders the remote image as a clickable HTML image when archiving fails", () => {
     const html = buildHtmlExport({
       title: "Remote image",
       conversationUrl: null,
@@ -172,8 +172,9 @@ describe("Claude remote image fallback", () => {
       messages: [remoteMessage]
     });
 
-    expect(html).toContain('href="https://example.com/image.jpg">Image: Example image</a>');
-    expect(html).toContain('href="https://example.com/page">source</a>');
+    expect(html).toContain(
+      '<a href="https://example.com/page"><img src="https://example.com/image.jpg" alt="Example image"></a>'
+    );
     expect(html).not.toContain("htmlAttachmentFailed");
   });
 
