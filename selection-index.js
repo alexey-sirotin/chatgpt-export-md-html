@@ -1,31 +1,6 @@
-import {
-  isVisibleMessage,
-  logicalSelectionGroups,
-  nodeDirectIds,
-  nodeExchangeIds
-} from "./conversation.js";
 import { chosenSelectionGroupIndexes } from "./selection-matcher.js";
 
 export const SELECTION_INDEX_SCHEMA_VERSION = 3;
-
-function uniqueStrings(values) {
-  return [...new Set(values.filter(Boolean).map(String))];
-}
-
-export function buildSelectionIndex(rawBranch) {
-  const groups = logicalSelectionGroups(rawBranch)
-    .filter(group => group.nodes.some(node => isVisibleMessage(node.message)))
-    .map(group => ({
-      kind: group.kind,
-      directIds: uniqueStrings(group.nodes.flatMap(node => nodeDirectIds(node))),
-      exchangeIds: uniqueStrings(group.nodes.flatMap(node => nodeExchangeIds(node)))
-    }));
-
-  return {
-    schemaVersion: SELECTION_INDEX_SCHEMA_VERSION,
-    groups
-  };
-}
 
 function chosenGroupIndexes(index, selection) {
   return chosenSelectionGroupIndexes(index?.groups, selection);
