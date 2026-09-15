@@ -1,10 +1,19 @@
 import {
   getConversationInPage,
+  conversationId(data) {
+    return data?.conversation_id || "";
+  },
+  buildSelectionIndex: buildChatGPTSelectionIndex,
+  selectBranch: selectChatGPTBranch,
   downloadAttachmentInPage,
   abortExportInPage,
   clearExportAbortInPage
 } from "./chatgpt-api.js";
 import { normalizeChatGPTConversation } from "./chatgpt-normalize.js";
+import {
+  buildChatGPTSelectionIndex,
+  selectChatGPTBranch
+} from "./chatgpt-selection.js";
 
 export const chatgptPlatform = {
   id: "chatgpt",
