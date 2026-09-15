@@ -26,11 +26,17 @@ function extractClaudeContent(message, data) {
 
     for (const item of block.content) {
       if (item?.type === "local_resource" && item.file_path) {
+        const pathName = item.file_path.split("/").filter(Boolean).at(-1) || null;
+        const itemName = typeof item.name === "string" ? item.name.trim() : "";
+        const originalName = itemName && /\.[A-Za-z0-9]{1,10}$/.test(itemName)
+          ? itemName
+          : pathName || itemName || null;
+
         attachments.push({
           source: "claude-local-resource",
           id: item.uuid || item.file_path,
           filePath: item.file_path,
-          originalName: item.name || item.file_path.split("/").filter(Boolean).at(-1) || null,
+          originalName,
           mimeType: item.mime_type || "application/octet-stream",
           conversationId: data?.uuid || null,
         });
