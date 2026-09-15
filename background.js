@@ -8,14 +8,6 @@ import {
   markdownHref
 } from "./utils.js";
 import {
-  isVisibleMessage,
-  rawBranchFromCurrent,
-  selectedBranchFromRaw,
-  branchExcludingFromRaw,
-  logicalSelectionGroups
-} from "./conversation.js";
-import {
-  buildSelectionIndex,
   selectionSummaryFromIndex,
   selectionIndexKnownIds,
   SELECTION_INDEX_SCHEMA_VERSION
@@ -329,45 +321,6 @@ async function enableSelectionIndexWatch(tabId) {
   }
 }
 
-function omissionBoundaries(rawBranch, selectedBranch) {
-  const selectedNodes = new Set(selectedBranch);
-  const groups = logicalSelectionGroups(rawBranch).filter(group =>
-    group.nodes.some(node => isVisibleMessage(node.message))
-  );
-  const groupSelected = groups.map(group =>
-    group.nodes.some(node => selectedNodes.has(node))
-  );
-  const firstSelected = groupSelected.indexOf(true);
-  const lastSelected = groupSelected.lastIndexOf(true);
-  const beforeNodes = new Set();
-
-  if (firstSelected === -1) {
-    return { beforeNodes, omittedAtStart: false, omittedAtEnd: false };
-  }
-
-  let omittedSinceSelected = false;
-  for (let i = firstSelected + 1; i <= lastSelected; i++) {
-    if (!groupSelected[i]) {
-      omittedSinceSelected = true;
-      continue;
-    }
-
-    if (omittedSinceSelected) {
-      const firstSelectedVisible = groups[i].nodes.find(node =>
-        selectedNodes.has(node) && isVisibleMessage(node.message)
-      );
-      if (firstSelectedVisible) beforeNodes.add(firstSelectedVisible);
-      omittedSinceSelected = false;
-    }
-  }
-
-  return {
-    beforeNodes,
-    omittedAtStart: firstSelected > 0,
-    omittedAtEnd: lastSelected < groups.length - 1
-  };
-}
-
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg.type !== "GET_EXPORT_STATE") return;
   loadExportProgress(msg.tabId).then(state => respond(state || { active: false }));
@@ -415,12 +368,12 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       const platform = await platformForTab(msg.tabId);
       if (!platform) throw new Error(t("noActiveConversation"));
       const data = await platform.getConversationInPage(msg.tabId);
-      if (msg.conversationId && data.conversation_id !== msg.conversationId) {
+      const conversationId = platform.conversationId(data);
+      if (msg.conversationId && conversationId !== msg.conversationId) {
         throw new Error(t("errorConversationChanged"));
       }
-      const rawBranch = rawBranchFromCurrent(data);
-      index = buildSelectionIndex(rawBranch);
-      await storeSelectionIndex(data.conversation_id, index);
+      index = platform.buildSelectionIndex(data);
+      await storeSelectionIndex(conversationId, index);
     }
 
     await enableSelectionIndexWatch(msg.tabId);
@@ -457,33 +410,19 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (operation) operation.platform = platform;
     const data = await platform.getConversationInPage(tabId, exportId);
     throwIfAborted(signal, t("exportCanceled"));
-    const rawBranch = rawBranchFromCurrent(data);
-    await storeSelectionIndex(data.conversation_id, buildSelectionIndex(rawBranch));
+    const selected = platform.selectBranch(data, selection);
+    const conversationId = platform.conversationId(data);
+    await storeSelectionIndex(conversationId, selected.selectionIndex);
     await enableSelectionIndexWatch(tabId);
-    let branch = rawBranch.filter(node => isVisibleMessage(node.message));
-
-    if (selection.selectAll) {
-      const hasExclusions =
-        (selection.excludedMessageIds || []).length > 0 ||
-        (selection.excludedTurnIds || []).length > 0;
-      if (hasExclusions) {
-        branch = branchExcludingFromRaw(rawBranch, selection);
-        if (!branch.length) throw new Error(t("nothingSelected"));
-      }
-    } else {
-      const hasSelectedMessages = (selection.selectedMessageIds || []).length > 0;
-      const hasSelectedTurns = (selection.selectedTurnIds || []).length > 0;
-      if (!hasSelectedMessages && !hasSelectedTurns) {
-        throw new Error(t("nothingSelected"));
-      }
-      branch = selectedBranchFromRaw(rawBranch, selection);
-      if (!branch.length) {
-        throw new Error(t("nothingSelected"));
-      }
+    if (!selected.branch.length) {
+      throw new Error(t("nothingSelected"));
     }
 
-    const omission = omissionBoundaries(rawBranch, branch);
-    const conversation = platform.normalizeConversation(data, branch, omission);
+    const conversation = platform.normalizeConversation(
+      data,
+      selected.branch,
+      selected.omission
+    );
     await reportExportProgress(
       tabId,
       t("progressPreparingMessages", conversation.messages.length)
