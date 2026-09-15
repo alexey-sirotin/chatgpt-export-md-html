@@ -65,23 +65,38 @@ export async function getClaudeConversationInPage(tabId, exportId = null) {
         "?tree=True&rendering_mode=messages&render_all_tools=true" +
         "&include_inline_comparison=true&consistency=strong";
 
+      const attempts = [];
       for (const organizationId of [...new Set(candidates)]) {
         const response = await fetch(
           "/api/organizations/" + encodeURIComponent(organizationId) +
           "/chat_conversations/" + encodeURIComponent(conversationId) + query,
           { credentials: "include", signal }
         );
+        attempts.push(organizationId + ":" + response.status);
         if (!response.ok) continue;
         const data = await response.json();
         return { ...data, __organizationId: organizationId };
       }
 
-      throw new Error(noActiveConversation);
+      throw new Error(
+        "Claude conversation fetch failed; candidates=" +
+        candidates.length + "; attempts=" + attempts.join(",")
+      );
     }
   });
 
   if (!result || !Array.isArray(result.chat_messages) || !result.current_leaf_message_uuid) {
-    throw new Error(noActiveConversation);
+    throw new Error(
+      "Claude conversation response shape mismatch: " +
+      JSON.stringify({
+        hasResult: !!result,
+        chatMessages: Array.isArray(result?.chat_messages)
+          ? result.chat_messages.length
+          : typeof result?.chat_messages,
+        currentLeaf: result?.current_leaf_message_uuid || null,
+        keys: result && typeof result === "object" ? Object.keys(result) : []
+      })
+    );
   }
   return result;
 }
