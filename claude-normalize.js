@@ -11,8 +11,13 @@ function remoteImageAttachment(image) {
     .replace(/[\\/:*?"<>|]/g, " ")
     .replace(/\s+/g, " ")
     .trim() || "Image";
-  const originalName = pathName && /\.[A-Za-z0-9]{1,10}$/.test(pathName)
-    ? decodeURIComponent(pathName)
+  let decodedPathName = pathName;
+  try {
+    decodedPathName = decodeURIComponent(pathName);
+  } catch {}
+
+  const originalName = decodedPathName && /\.[A-Za-z0-9]{1,10}$/.test(decodedPathName)
+    ? decodedPathName
     : title;
 
   const ext = (pathName.match(/\.([A-Za-z0-9]{2,5})(?:$|[?#])/i)?.[1] || "").toLowerCase();
