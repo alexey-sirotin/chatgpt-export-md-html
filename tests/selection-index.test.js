@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildSelectionIndex,
   SELECTION_INDEX_SCHEMA_VERSION,
   selectionSummaryFromIndex
 } from "../selection-index.js";
+import { buildChatGPTSelectionIndexFromRaw } from "../chatgpt-selection.js";
 
 function node(id, role, { metadata = {}, parent = null } = {}) {
   return {
@@ -24,7 +24,7 @@ function node(id, role, { metadata = {}, parent = null } = {}) {
 
 describe("selection index", () => {
   it("indexes metadata.parent_id for legacy selection matching", () => {
-    const index = buildSelectionIndex([
+    const index = buildChatGPTSelectionIndexFromRaw([
       node("u1", "user"),
       node("a1", "assistant", {
         metadata: { parent_id: "legacy-dom-image-turn" }
@@ -38,7 +38,7 @@ describe("selection index", () => {
   });
 
   it("counts an unambiguous orphan selection as one logical group", () => {
-    const index = buildSelectionIndex([
+    const index = buildChatGPTSelectionIndexFromRaw([
       node("u1", "user"),
       node("a1", "assistant"),
       node("u2", "user")
@@ -56,7 +56,7 @@ describe("selection index", () => {
   });
 
   it("does not count an ambiguous orphan in Select None mode", () => {
-    const index = buildSelectionIndex([
+    const index = buildChatGPTSelectionIndexFromRaw([
       node("u1", "user"),
       node("a1", "assistant"),
       node("u2", "user"),
@@ -76,7 +76,7 @@ describe("selection index", () => {
   });
 
   it("keeps the base Select All count when an orphan exclusion is ambiguous", () => {
-    const index = buildSelectionIndex([
+    const index = buildChatGPTSelectionIndexFromRaw([
       node("u1", "user"),
       node("a1", "assistant"),
       node("u2", "user"),
