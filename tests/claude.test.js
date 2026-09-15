@@ -120,7 +120,7 @@ describe("normalizeClaudeConversation", () => {
     expect(out.content.map(part => part.text).join("\n"))
       .toContain("Visible reply");
     expect(out.content.map(part => part.text).join("\n"))
-      .toContain("[Image: Example image](https://example.com/image.jpg) ([source](https://example.com/page))");
+      .not.toContain("https://example.com/image.jpg");
     expect(out.content.map(part => part.text).join("\n"))
       .not.toContain("Internal tool instruction");
 
@@ -131,6 +131,15 @@ describe("normalizeClaudeConversation", () => {
       originalName: "example.md",
       conversationId: "conv-1",
       mimeType: "text/markdown"
+    });
+    expect(out.attachments[1]).toMatchObject({
+      source: "claude-remote-image",
+      id: "img_1",
+      remoteUrl: "https://example.com/image.jpg",
+      sourceUrl: "https://example.com/page",
+      originalName: "image.jpg",
+      mimeType: "image/jpeg",
+      isImage: true
     });
   });
 });
