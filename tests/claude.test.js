@@ -120,7 +120,7 @@ describe("normalizeClaudeConversation", () => {
     expect(out.content.map(part => part.text).join("\n"))
       .toContain("Visible reply");
     expect(out.content.map(part => part.text).join("\n"))
-      .toContain("[![Example image](https://example.com/image.jpg)](https://example.com/page)");
+      .toContain("[Image: Example image](https://example.com/image.jpg) ([source](https://example.com/page))");
     expect(out.content.map(part => part.text).join("\n"))
       .not.toContain("Internal tool instruction");
 
@@ -129,7 +129,6 @@ describe("normalizeClaudeConversation", () => {
       id: "file-resource-1",
       filePath: "/mnt/user-data/outputs/example.md",
       conversationId: "conv-1",
-      organizationId: "org-1",
       mimeType: "text/markdown"
     });
   });
