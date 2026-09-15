@@ -3,6 +3,7 @@ import {
   getInstallType,
   resolveAttachmentDownloadConcurrency
 } from "./runtime-mode.js";
+import { platformForUrl } from "./platform.js";
 
 const $ = (id) => document.getElementById(id);
 const t = (key, substitutions) => {
@@ -23,15 +24,6 @@ let installType = null;
 
 async function send(type, payload = {}) {
   return chrome.tabs.sendMessage(tabId, { type, ...payload });
-}
-
-function conversationIdFromUrl(url) {
-  try {
-    const match = new URL(url).pathname.match(/\/c\/([^/?#]+)/);
-    return match ? decodeURIComponent(match[1]) : "";
-  } catch {
-    return "";
-  }
 }
 
 function exportNameDraftKey() {
@@ -313,7 +305,8 @@ async function init() {
   await Promise.all([loadNames(), loadOptions()]);
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = activeTab?.id;
-  conversationId = conversationIdFromUrl(activeTab?.url || "");
+  const platform = platformForUrl(activeTab?.url || "");
+  conversationId = platform?.conversationIdFromUrl(activeTab?.url || "") || "";
   try {
     const info = await send("GET_INFO");
     originalConversationTitle = info.title || "";
