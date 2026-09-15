@@ -112,11 +112,49 @@ export async function downloadClaudeAttachmentInPage(
         throw new Error("Unsupported Claude attachment source");
       }
 
-      const organizationId = attachment.organizationId;
+      let organizationId = attachment.organizationId || "";
       const conversationId = attachment.conversationId;
       const filePath = attachment.filePath;
-      if (!organizationId || !conversationId || !filePath) {
+      if (!conversationId || !filePath) {
         throw new Error("Claude attachment context is incomplete");
+      }
+
+      if (!organizationId) {
+        const marker = "/chat_conversations/" + conversationId;
+        const resources = performance.getEntriesByType("resource").map(entry => entry.name);
+        for (let i = resources.length - 1; i >= 0; i--) {
+          try {
+            const url = new URL(resources[i], location.href);
+            if (!url.pathname.includes(marker)) continue;
+            const parts = url.pathname.split("/");
+            const orgIndex = parts.indexOf("organizations");
+            if (orgIndex >= 0 && parts[orgIndex + 1]) {
+              organizationId = decodeURIComponent(parts[orgIndex + 1]);
+              break;
+            }
+          } catch {}
+        }
+      }
+
+      if (!organizationId) {
+        const orgResponse = await fetch("/api/organizations", {
+          credentials: "include",
+          signal
+        });
+        if (orgResponse.ok) {
+          const orgData = await orgResponse.json();
+          const organizations = Array.isArray(orgData)
+            ? orgData
+            : Array.isArray(orgData?.organizations)
+              ? orgData.organizations
+              : [];
+          const first = organizations[0];
+          organizationId = String(first?.uuid || first?.id || first?.organization_id || "");
+        }
+      }
+
+      if (!organizationId) {
+        throw new Error("Claude organization id was not found");
       }
 
       const originalName = attachment.originalName || null;
