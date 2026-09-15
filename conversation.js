@@ -50,9 +50,12 @@ export function isVisibleMessage(msg) {
   }
 
   // Image-only replies can be represented in conversation mapping as tool
-  // messages containing image_asset_pointer records. Keep only tool messages
-  // that actually contain downloadable media.
-  if (role === "tool") return attachmentRecords(msg).length > 0;
+  // messages containing image_asset_pointer records. Tool outputs may also
+  // reference ordinary files used internally by search/analysis tools; those
+  // are service records, not conversational replies. Keep only actual images.
+  if (role === "tool") {
+    return attachmentRecords(msg).some(attachment => attachment.isImage);
+  }
 
   return false;
 }
