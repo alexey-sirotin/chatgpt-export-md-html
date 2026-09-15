@@ -127,3 +127,75 @@ describe("nested list rendering", () => {
     expect(html).toContain("<li>Four</li>\n</ul>");
   });
 });
+
+
+describe("Claude remote image fallback", () => {
+  const remoteMessage = {
+    id: "remote-image",
+    role: "assistant",
+    authorName: "Assistant",
+    createdAt: "2026-09-15T09:29:00.000Z",
+    content: [],
+    attachments: [{
+      source: "claude-remote-image",
+      id: "img-1",
+      remoteUrl: "https://example.com/image.jpg",
+      sourceUrl: "https://example.com/page",
+      title: "Example image",
+      originalName: "image.jpg",
+      mimeType: "image/jpeg",
+      isImage: true,
+      localAvailable: false,
+      error: "TypeError: Failed to fetch"
+    }]
+  };
+
+  it("keeps the original remote links in Markdown when archiving fails", () => {
+    const markdown = buildMarkdownExport({
+      title: "Remote image",
+      conversationUrl: null,
+      includeOriginalLink: false,
+      messages: [remoteMessage]
+    });
+
+    expect(markdown).toContain(
+      "[Image: Example image](https://example.com/image.jpg) ([source](https://example.com/page))"
+    );
+    expect(markdown).not.toContain("htmlAttachmentFailed");
+  });
+
+  it("keeps the original remote links in HTML when archiving fails", () => {
+    const html = buildHtmlExport({
+      title: "Remote image",
+      conversationUrl: null,
+      includeOriginalLink: false,
+      messages: [remoteMessage]
+    });
+
+    expect(html).toContain('href="https://example.com/image.jpg">Image: Example image</a>');
+    expect(html).toContain('href="https://example.com/page">source</a>');
+    expect(html).not.toContain("htmlAttachmentFailed");
+  });
+
+  it("uses the local image when the remote image was archived", () => {
+    const localMessage = {
+      ...remoteMessage,
+      attachments: [{
+        ...remoteMessage.attachments[0],
+        localAvailable: true,
+        error: undefined,
+        localPath: "Export/image.jpg",
+        localName: "image.jpg"
+      }]
+    };
+    const markdown = buildMarkdownExport({
+      title: "Remote image",
+      conversationUrl: null,
+      includeOriginalLink: false,
+      messages: [localMessage]
+    });
+
+    expect(markdown).toContain("Export/image.jpg");
+    expect(markdown).not.toContain("https://example.com/image.jpg");
+  });
+});
