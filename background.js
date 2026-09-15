@@ -21,13 +21,7 @@ import {
   SELECTION_INDEX_SCHEMA_VERSION
 } from "./selection-index.js";
 import { replaceSandboxLinkDestinations } from "./attachments.js";
-import { normalizeChatGPTConversation } from "./chatgpt-normalize.js";
-import {
-  getConversationInPage,
-  downloadAttachmentInPage,
-  abortExportInPage,
-  clearExportAbortInPage
-} from "./chatgpt-api.js";
+import { platformForTab } from "./platform.js";
 import {
   createAbortError,
   isAbortError,
@@ -143,7 +137,8 @@ async function requestExportCancellation(tabId) {
   operation?.controller.abort();
 
   const tasks = [];
-  if (exportId) tasks.push(abortExportInPage(tabId, exportId));
+  const platform = operation?.platform || await platformForTab(tabId);
+  if (exportId && platform) tasks.push(platform.abortExportInPage(tabId, exportId));
   if (downloadId != null) tasks.push(chrome.downloads.cancel(downloadId));
   await Promise.allSettled(tasks);
 
@@ -417,7 +412,9 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     }
 
     if (!index) {
-      const data = await getConversationInPage(msg.tabId);
+      const platform = await platformForTab(msg.tabId);
+      if (!platform) throw new Error(t("noActiveConversation"));
+      const data = await platform.getConversationInPage(msg.tabId);
       if (msg.conversationId && data.conversation_id !== msg.conversationId) {
         throw new Error(t("errorConversationChanged"));
       }
@@ -445,7 +442,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   const exportId = makeExportId(tabId);
   const controller = new AbortController();
   const signal = controller.signal;
-  activeExports.set(tabId, { exportId, controller, downloadId: null });
+  activeExports.set(tabId, { exportId, controller, downloadId: null, platform: null });
 
   (async () => {
     await beginExportProgress(tabId, msg.startedAt, msg.exportName, exportId);
@@ -454,7 +451,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const selection = await chrome.tabs.sendMessage(tabId, { type: "GET_SELECTION" });
     throwIfAborted(signal, t("exportCanceled"));
     await reportExportProgress(tabId, t("progressLoadingChat"));
-    const data = await getConversationInPage(tabId, exportId);
+    const platform = await platformForTab(tabId);
+    if (!platform) throw new Error(t("noActiveConversation"));
+    const operation = currentExportOperation(tabId, exportId);
+    if (operation) operation.platform = platform;
+    const data = await platform.getConversationInPage(tabId, exportId);
     throwIfAborted(signal, t("exportCanceled"));
     const rawBranch = rawBranchFromCurrent(data);
     await storeSelectionIndex(data.conversation_id, buildSelectionIndex(rawBranch));
@@ -482,7 +483,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     }
 
     const omission = omissionBoundaries(rawBranch, branch);
-    const conversation = normalizeChatGPTConversation(data, branch, omission);
+    const conversation = platform.normalizeConversation(data, branch, omission);
     await reportExportProgress(
       tabId,
       t("progressPreparingMessages", conversation.messages.length)
@@ -603,7 +604,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
             job.downloadError = t("errorAttachmentId");
           } else {
             try {
-              job.media = await downloadAttachmentInPage(
+              job.media = await platform.downloadAttachmentInPage(
                 tabId,
                 downloadRecord,
                 false,
@@ -638,7 +639,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
             a.mimeType === "application/octet-stream")
         ) {
           try {
-            const info = await downloadAttachmentInPage(
+            const info = await platform.downloadAttachmentInPage(
               tabId,
               downloadRecord,
               true,
@@ -860,7 +861,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const operation = currentExportOperation(tabId, exportId);
     if (operation) activeExports.delete(tabId);
     try {
-      await clearExportAbortInPage(tabId, exportId);
+      const platform = operation?.platform || await platformForTab(tabId);
+      await platform?.clearExportAbortInPage(tabId, exportId);
     } catch {}
   });
 
