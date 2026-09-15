@@ -128,6 +128,7 @@ describe("normalizeClaudeConversation", () => {
       source: "claude-local-resource",
       id: "file-resource-1",
       filePath: "/mnt/user-data/outputs/example.md",
+      originalName: "example.md",
       conversationId: "conv-1",
       mimeType: "text/markdown"
     });
