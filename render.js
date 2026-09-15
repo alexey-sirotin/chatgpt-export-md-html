@@ -329,6 +329,28 @@ function isImageAttachment(attachment) {
   return /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(name);
 }
 
+function remoteImageFallbackMarkdown(attachment) {
+  const url = String(attachment?.remoteUrl || "").trim();
+  if (!url) return "";
+  const label = markdownLabel(attachment?.title || attachment?.originalName || t("imageAttachment"));
+  const sourceUrl = String(attachment?.sourceUrl || "").trim();
+  const source = sourceUrl && sourceUrl !== url
+    ? ` ([source](${sourceUrl}))`
+    : "";
+  return `[Image: ${label}](${url})${source}`;
+}
+
+function remoteImageFallbackHtml(attachment) {
+  const url = String(attachment?.remoteUrl || "").trim();
+  if (!url) return "";
+  const label = escapeHtml(attachment?.title || attachment?.originalName || t("imageAttachment"));
+  const sourceUrl = String(attachment?.sourceUrl || "").trim();
+  const source = sourceUrl && sourceUrl !== url
+    ? ` <a href="${escapeHtml(safeHtmlHref(sourceUrl))}">source</a>`
+    : "";
+  return `<p class="attachment"><a href="${escapeHtml(safeHtmlHref(url))}">Image: ${label}</a>${source}</p>`;
+}
+
 export function buildMarkdownExport({ title, conversationUrl, messages, includeOriginalLink = true }) {
   const md = [`# ${title}`, ""];
   if (includeOriginalLink && conversationUrl) {
@@ -352,6 +374,11 @@ export function buildMarkdownExport({ title, conversationUrl, messages, includeO
     if (texts.length) md.push(texts.join("\n\n"), "");
 
     for (const a of attachments) {
+      if (a.source === "claude-remote-image" && !a.localAvailable) {
+        const fallback = remoteImageFallbackMarkdown(a);
+        if (fallback) md.push(fallback, "");
+        continue;
+      }
       if (a.error) {
         md.push(`*[${t("htmlAttachmentFailed", a.originalName || a.id || a.sandboxPath || a.localName || "")}]*`, "");
         continue;
@@ -389,6 +416,9 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
       .join("\n");
 
     const attachments = (message.attachments || []).map(a => {
+      if (a.source === "claude-remote-image" && !a.localAvailable) {
+        return remoteImageFallbackHtml(a);
+      }
       if (a.error) {
         return `<p class="attachment-error"><em>${escapeHtml(t("htmlAttachmentFailed", a.originalName || a.id || ""))}</em></p>`;
       }
