@@ -334,10 +334,8 @@ function remoteImageFallbackMarkdown(attachment) {
   if (!url) return "";
   const label = markdownLabel(attachment?.title || attachment?.originalName || t("imageAttachment"));
   const sourceUrl = String(attachment?.sourceUrl || "").trim();
-  const source = sourceUrl && sourceUrl !== url
-    ? ` ([source](${sourceUrl}))`
-    : "";
-  return `[Image: ${label}](${url})${source}`;
+  const target = sourceUrl || url;
+  return `[![${label}](${url})](${target})`;
 }
 
 function remoteImageFallbackHtml(attachment) {
@@ -345,10 +343,9 @@ function remoteImageFallbackHtml(attachment) {
   if (!url) return "";
   const label = escapeHtml(attachment?.title || attachment?.originalName || t("imageAttachment"));
   const sourceUrl = String(attachment?.sourceUrl || "").trim();
-  const source = sourceUrl && sourceUrl !== url
-    ? ` <a href="${escapeHtml(safeHtmlHref(sourceUrl))}">source</a>`
-    : "";
-  return `<p class="attachment"><a href="${escapeHtml(safeHtmlHref(url))}">Image: ${label}</a>${source}</p>`;
+  const target = escapeHtml(safeHtmlHref(sourceUrl || url));
+  const src = escapeHtml(safeHtmlHref(url));
+  return `<figure><a href="${target}"><img src="${src}" alt="${label}"></a></figure>`;
 }
 
 export function buildMarkdownExport({ title, conversationUrl, messages, includeOriginalLink = true }) {
