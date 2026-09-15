@@ -123,6 +123,48 @@ export async function downloadClaudeAttachmentInPage(
         signal = controller.signal;
       }
 
+      if (attachment?.source === "claude-remote-image") {
+        const remoteUrl = attachment.remoteUrl;
+        if (!remoteUrl) throw new Error("Claude remote image URL is missing");
+
+        const originalName = attachment.originalName || attachment.title || null;
+        const declaredType = attachment.mimeType || "application/octet-stream";
+
+        if (metadataOnly) {
+          return {
+            bytes: null,
+            type: declaredType,
+            originalName,
+            fileId: attachment.id || null,
+            libraryFileId: null
+          };
+        }
+
+        const response = await fetch(remoteUrl, {
+          credentials: "omit",
+          mode: "cors",
+          signal
+        });
+        if (!response.ok) {
+          throw new Error("Claude remote image GET: " + response.status);
+        }
+
+        const blob = await response.blob();
+        const type = blob.type || response.headers.get("content-type") || declaredType;
+        if (type && !type.startsWith("image/")) {
+          throw new Error("Claude remote image returned non-image content: " + type);
+        }
+
+        const buffer = await blob.arrayBuffer();
+        return {
+          bytes: Array.from(new Uint8Array(buffer)),
+          type: type || declaredType,
+          originalName,
+          fileId: attachment.id || null,
+          libraryFileId: null
+        };
+      }
+
       if (attachment?.source !== "claude-local-resource") {
         throw new Error("Unsupported Claude attachment source");
       }
