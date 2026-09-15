@@ -198,9 +198,15 @@ export async function downloadClaudeAttachmentInPage(
 
       const blob = await response.blob();
       const buffer = await blob.arrayBuffer();
+      const receivedType = blob.type || response.headers.get("content-type") || "";
+      const resolvedType =
+        receivedType && receivedType !== "application/octet-stream"
+          ? receivedType
+          : type;
+
       return {
         bytes: Array.from(new Uint8Array(buffer)),
-        type: blob.type || response.headers.get("content-type") || type,
+        type: resolvedType,
         originalName,
         fileId: attachment.id || null,
         libraryFileId: null
