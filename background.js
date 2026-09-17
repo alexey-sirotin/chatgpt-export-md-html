@@ -673,6 +673,9 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
           localName,
           localPath,
           mimeType: resolvedMimeType || a.mimeType,
+          ...(a.source === "claude-remote-image"
+            ? { localAvailable: !!(saveAttachments && media?.bytes) }
+            : {}),
           ...(downloadError ? { error: downloadError } : {})
         });
       }
