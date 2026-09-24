@@ -2,6 +2,67 @@ import { t } from "./utils.js";
 
 const PAGE_ABORT_CONTROLLERS_KEY = "__chatgptExportAbortControllers";
 
+function roleFromSender(sender) {
+  const value = String(sender || "").toLowerCase();
+  if (/human|user/.test(value)) return "user";
+  if (/assistant|model/.test(value)) return "assistant";
+  return "unknown";
+}
+
+function buildActiveBranch(responses, mountedIds = []) {
+  const items = Array.isArray(responses) ? responses : [];
+  if (!items.length) return [];
+
+  const byId = new Map();
+  const parentIds = new Set();
+  for (const item of items) {
+    if (!item?.responseId) continue;
+    byId.set(String(item.responseId), item);
+    if (item.parentResponseId) parentIds.add(String(item.parentResponseId));
+  }
+
+  const mounted = new Set((mountedIds || []).map(String));
+  const leaves = items.filter(item => item?.responseId && !parentIds.has(String(item.responseId)));
+  const candidates = leaves.length ? leaves : items.filter(item => item?.responseId);
+
+  const pathFor = leaf => {
+    const path = [];
+    const seen = new Set();
+    let current = leaf;
+    while (current?.responseId && !seen.has(String(current.responseId))) {
+      const id = String(current.responseId);
+      seen.add(id);
+      path.push(current);
+      current = current.parentResponseId ? byId.get(String(current.parentResponseId)) : null;
+    }
+    return path.reverse();
+  };
+
+  let bestPath = [];
+  let bestOverlap = -1;
+  let bestTime = -Infinity;
+  let bestIndex = -1;
+
+  for (const leaf of candidates) {
+    const path = pathFor(leaf);
+    const overlap = path.reduce((count, item) => count + (mounted.has(String(item.responseId)) ? 1 : 0), 0);
+    const time = Number.isFinite(Date.parse(leaf.createTime || "")) ? Date.parse(leaf.createTime) : -Infinity;
+    const index = items.indexOf(leaf);
+    if (
+      overlap > bestOverlap ||
+      (overlap === bestOverlap && time > bestTime) ||
+      (overlap === bestOverlap && time === bestTime && index > bestIndex)
+    ) {
+      bestPath = path;
+      bestOverlap = overlap;
+      bestTime = time;
+      bestIndex = index;
+    }
+  }
+
+  return bestPath;
+}
+
 export async function getGrokConversationInPage(tabId, exportId = null) {
   const noActiveConversation = t("noActiveConversation");
   const [{ result }] = await chrome.scripting.executeScript({
@@ -9,7 +70,6 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
     world: "MAIN",
     args: [noActiveConversation, PAGE_ABORT_CONTROLLERS_KEY, exportId],
     func: async (noActiveConversation, registryKey, exportId) => {
-      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       let signal;
       if (exportId) {
         const registry = globalThis[registryKey] ||= new Map();
@@ -24,7 +84,6 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
       function conversationIdFromPage() {
         const pathMatch = location.pathname.match(/\/(?:c|chat|conversation)\/([0-9a-f-]{36})(?:\/|$)/i);
         if (pathMatch) return pathMatch[1];
-
         const resources = performance.getEntriesByType("resource").map(entry => entry.name);
         for (let i = resources.length - 1; i >= 0; i--) {
           const match = resources[i].match(/\/rest\/app-chat\/conversations_v2\/([0-9a-f-]{36})/i);
@@ -33,151 +92,90 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
         return "";
       }
 
-      function roleForTurn(turn) {
-        if (turn.querySelector('[data-testid="user-message"]')) return "user";
-        if (turn.querySelector('[data-testid="assistant-message"]')) return "assistant";
-        return "unknown";
-      }
-
-      function findPayload(markdown) {
-        if (!markdown) return null;
-        const roots = Object.keys(markdown)
-          .filter(key => key.startsWith("__reactProps$"))
-          .map(key => markdown[key]);
-        for (const key of Object.keys(markdown)) {
-          if (key.startsWith("__reactFiber$")) roots.push(markdown[key]);
+      function activeBranch(responses, mountedIds) {
+        const items = Array.isArray(responses) ? responses : [];
+        const byId = new Map();
+        const parentIds = new Set();
+        for (const item of items) {
+          if (!item?.responseId) continue;
+          byId.set(String(item.responseId), item);
+          if (item.parentResponseId) parentIds.add(String(item.parentResponseId));
         }
-
-        const seen = new WeakSet();
-        const queue = roots.map(value => ({ value, depth: 0 }));
-        let visited = 0;
-        let fallback = null;
-
-        while (queue.length && visited < 5000) {
-          const { value, depth } = queue.shift();
-          visited++;
-          if (value == null) continue;
-
-          if (typeof value === "string") {
-            if (!fallback && value.length > 0) fallback = { message: value, cardAttachmentsJson: [] };
-            continue;
+        const mounted = new Set((mountedIds || []).map(String));
+        const leaves = items.filter(item => item?.responseId && !parentIds.has(String(item.responseId)));
+        const candidates = leaves.length ? leaves : items.filter(item => item?.responseId);
+        let bestPath = [];
+        let bestOverlap = -1;
+        let bestTime = -Infinity;
+        let bestIndex = -1;
+        for (const leaf of candidates) {
+          const path = [];
+          const seen = new Set();
+          let current = leaf;
+          while (current?.responseId && !seen.has(String(current.responseId))) {
+            const id = String(current.responseId);
+            seen.add(id);
+            path.push(current);
+            current = current.parentResponseId ? byId.get(String(current.parentResponseId)) : null;
           }
-          if ((typeof value !== "object" && typeof value !== "function") || depth > 12) continue;
-          if (typeof value === "object") {
-            if (seen.has(value)) continue;
-            seen.add(value);
-          }
-
-          try {
-            if (typeof value.message === "string") {
-              return {
-                message: value.message,
-                cardAttachmentsJson: Array.isArray(value.cardAttachmentsJson)
-                  ? value.cardAttachmentsJson
-                  : []
-              };
-            }
-          } catch {}
-
-          let keys = [];
-          try { keys = Object.keys(value); } catch {}
-          for (const key of keys) {
-            if (key === "stateNode" && depth > 6) continue;
-            let child;
-            try { child = value[key]; } catch { continue; }
-            queue.push({ value: child, depth: depth + 1 });
+          path.reverse();
+          const overlap = path.reduce((count, item) => count + (mounted.has(String(item.responseId)) ? 1 : 0), 0);
+          const parsed = Date.parse(leaf.createTime || "");
+          const time = Number.isFinite(parsed) ? parsed : -Infinity;
+          const index = items.indexOf(leaf);
+          if (overlap > bestOverlap || (overlap === bestOverlap && time > bestTime) || (overlap === bestOverlap && time === bestTime && index > bestIndex)) {
+            bestPath = path;
+            bestOverlap = overlap;
+            bestTime = time;
+            bestIndex = index;
           }
         }
-
-        return fallback;
-      }
-
-      function extractTurn(turn, scroller) {
-        const id = String(turn.id || "").replace(/^response-/, "");
-        if (!id) return null;
-        const role = roleForTurn(turn);
-        const markdown = turn.querySelector(".response-content-markdown");
-        const payload = findPayload(markdown);
-        const message = typeof payload?.message === "string"
-          ? payload.message
-          : (markdown?.innerText || markdown?.textContent || "").trim();
-        const rect = turn.getBoundingClientRect();
-        const scrollerRect = scroller.getBoundingClientRect();
-        return {
-          id,
-          role,
-          message,
-          cardAttachmentsJson: payload?.cardAttachmentsJson || [],
-          __order: scroller.scrollTop + rect.top - scrollerRect.top
-        };
-      }
-
-      async function collectTurns() {
-        const scroller = document.querySelector('[data-testid="chat-transcript-scroller"]');
-        if (!scroller) throw new Error(noActiveConversation);
-        const originalTop = scroller.scrollTop;
-        const seen = new Map();
-
-        const snapshot = () => {
-          for (const turn of document.querySelectorAll('[id^="response-"]')) {
-            const extracted = extractTurn(turn, scroller);
-            if (!extracted || extracted.role === "unknown") continue;
-            const previous = seen.get(extracted.id);
-            if (!previous || extracted.__order < previous.__order) seen.set(extracted.id, extracted);
-          }
-        };
-
-        // Grok's virtualizer proved more reliable when traversed from the current
-        // leaf backwards. Starting at the top could stop before the newest turns
-        // because scrollHeight changes while rows are being mounted/unmounted.
-        scroller.scrollTop = scroller.scrollHeight;
-        await sleep(300);
-        snapshot();
-
-        let stable = 0;
-        let previousTop = Number.POSITIVE_INFINITY;
-        while (stable < 2) {
-          if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-          const nextTop = Math.max(
-            0,
-            scroller.scrollTop - Math.max(200, scroller.clientHeight * 0.8)
-          );
-          scroller.scrollTop = nextTop;
-          await sleep(220);
-          snapshot();
-
-          const currentTop = scroller.scrollTop;
-          if (currentTop <= 2 || Math.abs(currentTop - previousTop) < 2) {
-            stable++;
-          } else {
-            stable = 0;
-          }
-          previousTop = currentTop;
-        }
-
-        scroller.scrollTop = originalTop;
-        await sleep(50);
-        return [...seen.values()]
-          .sort((a, b) => a.__order - b.__order)
-          .map(({ __order, ...turn }) => turn);
+        return bestPath;
       }
 
       const conversationId = conversationIdFromPage();
       if (!conversationId) throw new Error(noActiveConversation);
 
-      let metadata = null;
-      try {
-        const response = await fetch(
+      const mountedIds = [...document.querySelectorAll('[id^="response-"]')]
+        .map(node => String(node.id || "").replace(/^response-/, ""))
+        .filter(Boolean);
+
+      const [metadataResponse, responsesResponse] = await Promise.all([
+        fetch(
           "/rest/app-chat/conversations_v2/" + encodeURIComponent(conversationId) +
           "?includeWorkspaces=true&includeTaskResult=true",
           { credentials: "include", signal }
-        );
-        if (response.ok) metadata = (await response.json())?.conversation || null;
-      } catch (error) {
-        if (signal?.aborted) throw error;
-      }
+        ),
+        fetch(
+          "/rest/app-chat/conversations/" + encodeURIComponent(conversationId) +
+          "/responses?includeThreads=false",
+          { credentials: "include", signal }
+        )
+      ]);
 
-      const turns = await collectTurns();
+      let metadata = null;
+      if (metadataResponse.ok) metadata = (await metadataResponse.json())?.conversation || null;
+      if (!responsesResponse.ok) throw new Error("Grok responses GET: " + responsesResponse.status);
+
+      const allResponses = (await responsesResponse.json())?.responses || [];
+      const branch = activeBranch(allResponses, mountedIds);
+      const turns = branch
+        .filter(item => item && item.isControl !== true)
+        .map(item => {
+          const sender = String(item.sender || "").toLowerCase();
+          const role = /human|user/.test(sender) ? "user" : /assistant|model/.test(sender) ? "assistant" : "unknown";
+          return {
+            id: String(item.responseId || ""),
+            role,
+            message: typeof item.message === "string" ? item.message : "",
+            cardAttachmentsJson: Array.isArray(item.cardAttachmentsJson) ? item.cardAttachmentsJson : [],
+            createdAt: item.createTime || null,
+            model: item.model || item.requestMetadata?.model || null,
+            parentResponseId: item.parentResponseId || null
+          };
+        })
+        .filter(turn => turn.id && turn.role !== "unknown");
+
       if (!turns.length) throw new Error(noActiveConversation);
 
       return {
@@ -206,43 +204,27 @@ function attachmentMetadata(attachment) {
   };
 }
 
-export async function downloadGrokAttachmentInPage(
-  tabId,
-  attachment,
-  metadataOnly = false,
-  exportId = null
-) {
+export async function downloadGrokAttachmentInPage(tabId, attachment, metadataOnly = false, exportId = null) {
   if (metadataOnly) return attachmentMetadata(attachment);
-
   const remoteUrl = attachment?.remoteUrl;
   if (!remoteUrl) throw new Error("Grok attachment URL is missing");
 
-  // Generated Grok files and images live on assets.grok.com. Fetch those from
-  // the extension worker itself: unlike the page world this is not blocked by
-  // the asset host's CORS policy once the narrow host permission is granted.
-  try {
-    const url = new URL(remoteUrl);
-    if (url.hostname === "assets.grok.com") {
-      const response = await fetch(remoteUrl, { credentials: "omit" });
-      if (!response.ok) throw new Error("Grok asset GET: " + response.status);
-      const blob = await response.blob();
-      const declaredType = attachment?.mimeType || "application/octet-stream";
-      const receivedType = blob.type || response.headers.get("content-type") || "";
-      const type = receivedType && receivedType !== "application/octet-stream"
-        ? receivedType
-        : declaredType;
-      const buffer = await blob.arrayBuffer();
-      return {
-        bytes: Array.from(new Uint8Array(buffer)),
-        type,
-        originalName: attachment?.originalName || attachment?.title || null,
-        fileId: attachment?.id || null,
-        libraryFileId: null
-      };
-    }
-  } catch (error) {
-    if (error instanceof TypeError) throw error;
-    throw error;
+  const url = new URL(remoteUrl);
+  if (url.hostname === "assets.grok.com") {
+    const response = await fetch(remoteUrl, { credentials: "omit" });
+    if (!response.ok) throw new Error("Grok asset GET: " + response.status);
+    const blob = await response.blob();
+    const declaredType = attachment?.mimeType || "application/octet-stream";
+    const receivedType = blob.type || response.headers.get("content-type") || "";
+    const type = receivedType && receivedType !== "application/octet-stream" ? receivedType : declaredType;
+    const buffer = await blob.arrayBuffer();
+    return {
+      bytes: Array.from(new Uint8Array(buffer)),
+      type,
+      originalName: attachment?.originalName || attachment?.title || null,
+      fileId: attachment?.id || null,
+      libraryFileId: null
+    };
   }
 
   const [{ result }] = await chrome.scripting.executeScript({
@@ -260,30 +242,17 @@ export async function downloadGrokAttachmentInPage(
         }
         signal = controller.signal;
       }
-
-      const remoteUrl = attachment?.remoteUrl;
-      if (!remoteUrl) throw new Error("Grok attachment URL is missing");
-      const declaredType = attachment.mimeType || "application/octet-stream";
-      const originalName = attachment.originalName || attachment.title || null;
-
-      const response = await fetch(remoteUrl, {
-        credentials: "omit",
-        mode: "cors",
-        signal
-      });
+      const response = await fetch(attachment.remoteUrl, { credentials: "omit", mode: "cors", signal });
       if (!response.ok) throw new Error("Grok attachment GET: " + response.status);
-
       const blob = await response.blob();
+      const declaredType = attachment.mimeType || "application/octet-stream";
       const receivedType = blob.type || response.headers.get("content-type") || "";
-      const resolvedType =
-        receivedType && receivedType !== "application/octet-stream"
-          ? receivedType
-          : declaredType;
+      const type = receivedType && receivedType !== "application/octet-stream" ? receivedType : declaredType;
       const buffer = await blob.arrayBuffer();
       return {
         bytes: Array.from(new Uint8Array(buffer)),
-        type: resolvedType,
-        originalName,
+        type,
+        originalName: attachment.originalName || attachment.title || null,
         fileId: attachment.id || null,
         libraryFileId: null
       };
@@ -321,3 +290,5 @@ export async function clearGrokExportAbortInPage(tabId, exportId) {
     }
   });
 }
+
+export { buildActiveBranch, roleFromSender };

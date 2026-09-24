@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildActiveBranch } from "../grok-api.js";
 import {
   cleanGrokMarkdown,
   normalizeGrokConversation,
@@ -9,6 +10,38 @@ import { buildGrokSelectionIndex, selectGrokBranch } from "../grok-selection.js"
 function turn(id, role, message, cardAttachmentsJson = []) {
   return { id, role, message, cardAttachmentsJson };
 }
+
+describe("Grok active branch", () => {
+  it("chooses the newest leaf and reconstructs its parent chain", () => {
+    const responses = [
+      { responseId: "u1", sender: "human", parentResponseId: "root", createTime: "2026-09-24T10:00:00Z" },
+      { responseId: "a1", sender: "assistant", parentResponseId: "u1", createTime: "2026-09-24T10:00:01Z" },
+      { responseId: "u-old", sender: "human", parentResponseId: "a1", createTime: "2026-09-24T10:01:00Z" },
+      { responseId: "a-old", sender: "assistant", parentResponseId: "u-old", createTime: "2026-09-24T10:01:01Z" },
+      { responseId: "u-new", sender: "human", parentResponseId: "a1", createTime: "2026-09-24T10:02:00Z" },
+      { responseId: "a-new", sender: "assistant", parentResponseId: "u-new", createTime: "2026-09-24T10:02:01Z" }
+    ];
+
+    expect(buildActiveBranch(responses).map(item => item.responseId)).toEqual([
+      "u1", "a1", "u-new", "a-new"
+    ]);
+  });
+
+  it("prefers the branch represented by currently mounted turns", () => {
+    const responses = [
+      { responseId: "u1", sender: "human", parentResponseId: "root", createTime: "2026-09-24T10:00:00Z" },
+      { responseId: "a1", sender: "assistant", parentResponseId: "u1", createTime: "2026-09-24T10:00:01Z" },
+      { responseId: "u-old", sender: "human", parentResponseId: "a1", createTime: "2026-09-24T10:01:00Z" },
+      { responseId: "a-old", sender: "assistant", parentResponseId: "u-old", createTime: "2026-09-24T10:01:01Z" },
+      { responseId: "u-new", sender: "human", parentResponseId: "a1", createTime: "2026-09-24T10:02:00Z" },
+      { responseId: "a-new", sender: "assistant", parentResponseId: "u-new", createTime: "2026-09-24T10:02:01Z" }
+    ];
+
+    expect(buildActiveBranch(responses, ["u-old", "a-old"]).map(item => item.responseId)).toEqual([
+      "u1", "a1", "u-old", "a-old"
+    ]);
+  });
+});
 
 describe("Grok selection", () => {
   const data = {

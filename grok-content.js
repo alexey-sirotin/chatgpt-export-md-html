@@ -11,8 +11,6 @@
   let collecting = null;
   let orderDirty = true;
 
-  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
   function conversationId() {
     const pathMatch = location.pathname.match(/\/(?:c|chat|conversation)\/([0-9a-f-]{36})(?:\/|$)/i);
     if (pathMatch) return pathMatch[1];
@@ -81,7 +79,6 @@
     box.addEventListener("click", event => {
       event.stopPropagation();
       const value = box.checked;
-
       if (event.shiftKey && anchorId && orderedIds.length) {
         const a = orderedIds.indexOf(anchorId);
         const b = orderedIds.indexOf(item.id);
@@ -95,7 +92,6 @@
       } else {
         setSelected(item.id, value);
       }
-
       anchorId = item.id;
       refreshMounted();
     });
@@ -136,58 +132,70 @@
     });
   }
 
+  function activeIds(responses, mountedIds) {
+    const items = Array.isArray(responses) ? responses : [];
+    const byId = new Map();
+    const parentIds = new Set();
+    for (const item of items) {
+      if (!item?.responseId) continue;
+      byId.set(String(item.responseId), item);
+      if (item.parentResponseId) parentIds.add(String(item.parentResponseId));
+    }
+    const mounted = new Set((mountedIds || []).map(String));
+    const leaves = items.filter(item => item?.responseId && !parentIds.has(String(item.responseId)));
+    const candidates = leaves.length ? leaves : items.filter(item => item?.responseId);
+    let best = [];
+    let bestOverlap = -1;
+    let bestTime = -Infinity;
+    let bestIndex = -1;
+    for (const leaf of candidates) {
+      const path = [];
+      const seen = new Set();
+      let current = leaf;
+      while (current?.responseId && !seen.has(String(current.responseId))) {
+        const id = String(current.responseId);
+        seen.add(id);
+        path.push(current);
+        current = current.parentResponseId ? byId.get(String(current.parentResponseId)) : null;
+      }
+      path.reverse();
+      const overlap = path.reduce((count, item) => count + (mounted.has(String(item.responseId)) ? 1 : 0), 0);
+      const parsed = Date.parse(leaf.createTime || "");
+      const time = Number.isFinite(parsed) ? parsed : -Infinity;
+      const index = items.indexOf(leaf);
+      if (overlap > bestOverlap || (overlap === bestOverlap && time > bestTime) || (overlap === bestOverlap && time === bestTime && index > bestIndex)) {
+        best = path;
+        bestOverlap = overlap;
+        bestTime = time;
+        bestIndex = index;
+      }
+    }
+    return best
+      .filter(item => item && item.isControl !== true)
+      .filter(item => /human|user|assistant|model/i.test(String(item.sender || "")))
+      .map(item => String(item.responseId));
+  }
+
   async function collectOrderedIds() {
     if (orderedIds.length && !orderDirty) return orderedIds;
     if (collecting) return collecting;
 
     collecting = (async () => {
-      const scroller = document.querySelector('[data-testid="chat-transcript-scroller"]');
-      if (!scroller) {
+      const id = conversationId();
+      if (!id) {
         orderedIds = turnItems().map(item => item.id);
         orderDirty = false;
         return orderedIds;
       }
 
-      const originalTop = scroller.scrollTop;
-      const positions = new Map();
-      const snapshot = () => {
-        const scrollerRect = scroller.getBoundingClientRect();
-        for (const { turn, id } of turnItems()) {
-          const rect = turn.getBoundingClientRect();
-          const position = scroller.scrollTop + rect.top - scrollerRect.top;
-          const previous = positions.get(id);
-          if (previous == null || position < previous) positions.set(id, position);
-        }
-      };
-
-      scroller.scrollTop = scroller.scrollHeight;
-      await sleep(300);
-      snapshot();
-
-      let stable = 0;
-      let previousTop = Number.POSITIVE_INFINITY;
-      while (stable < 2) {
-        const nextTop = Math.max(
-          0,
-          scroller.scrollTop - Math.max(200, scroller.clientHeight * 0.8)
-        );
-        scroller.scrollTop = nextTop;
-        await sleep(220);
-        snapshot();
-        const currentTop = scroller.scrollTop;
-        if (currentTop <= 2 || Math.abs(currentTop - previousTop) < 2) {
-          stable++;
-        } else {
-          stable = 0;
-        }
-        previousTop = currentTop;
-      }
-
-      scroller.scrollTop = originalTop;
-      await sleep(50);
-      orderedIds = [...positions.entries()]
-        .sort((a, b) => a[1] - b[1])
-        .map(([id]) => id);
+      const response = await fetch(
+        `/rest/app-chat/conversations/${encodeURIComponent(id)}/responses?includeThreads=false`,
+        { credentials: "include", headers: { Accept: "application/json" } }
+      );
+      if (!response.ok) throw new Error("Grok responses GET: " + response.status);
+      const data = await response.json();
+      const mountedIds = turnItems().map(item => item.id);
+      orderedIds = activeIds(data.responses || [], mountedIds);
       orderDirty = false;
       refreshMounted();
       return orderedIds;
@@ -208,19 +216,24 @@
   function selectionIndexSnapshot() {
     return {
       conversationId: conversationId(),
-      ids: turnItems().map(item => item.id),
+      ids: orderedIds.length ? [...orderedIds] : turnItems().map(item => item.id),
       temporaryIds: []
     };
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (msg.type === "GET_INFO") {
-      refreshMounted();
-      respond({
+      collectOrderedIds().then(() => {
+        refreshMounted();
+        respond({
+          title: document.title.replace(/\s*[|–-]\s*Grok.*$/i, ""),
+          ...currentState()
+        });
+      }).catch(() => respond({
         title: document.title.replace(/\s*[|–-]\s*Grok.*$/i, ""),
         ...currentState()
-      });
-      return;
+      }));
+      return true;
     }
 
     if (msg.type === "TOGGLE_SELECTION_UI") {
@@ -254,7 +267,7 @@
     }
 
     if (msg.type === "GET_SELECTION") {
-      respond({
+      collectOrderedIds().then(() => respond({
         selectAll: selectAllMode,
         selectedTurnIds: [],
         selectedMessageIds: [...selectedMessageIds],
@@ -262,8 +275,16 @@
         excludedMessageIds: [...excludedMessageIds],
         legacyTurnContexts: [],
         orderedIds: [...orderedIds]
-      });
-      return;
+      })).catch(() => respond({
+        selectAll: selectAllMode,
+        selectedTurnIds: [],
+        selectedMessageIds: [...selectedMessageIds],
+        excludedTurnIds: [],
+        excludedMessageIds: [...excludedMessageIds],
+        legacyTurnContexts: [],
+        orderedIds: [...orderedIds]
+      }));
+      return true;
     }
 
     if (msg.type === "RESET_AFTER_EXPORT") {
@@ -278,8 +299,8 @@
     }
 
     if (msg.type === "GET_SELECTION_INDEX_IDS") {
-      respond(selectionIndexSnapshot());
-      return;
+      collectOrderedIds().then(() => respond(selectionIndexSnapshot())).catch(() => respond(selectionIndexSnapshot()));
+      return true;
     }
 
     if (msg.type === "ENABLE_SELECTION_INDEX_WATCH") {
