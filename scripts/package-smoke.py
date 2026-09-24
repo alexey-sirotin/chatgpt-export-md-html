@@ -41,6 +41,7 @@ COMMON_ROOT_FILES = {
 
 FORBIDDEN_PREFIXES = (
     ".github/",
+    "docs/",
     "scripts/",
     "tests/",
     "node_modules/",
