@@ -3,7 +3,8 @@ import { buildActiveBranch } from "../grok-api.js";
 import {
   cleanGrokMarkdown,
   normalizeGrokConversation,
-  parseGrokCards
+  parseGrokCards,
+  replaceGrokCardPlaceholders
 } from "../grok-normalize.js";
 import { buildGrokSelectionIndex, selectGrokBranch } from "../grok-selection.js";
 
@@ -186,6 +187,49 @@ describe("Grok normalization", () => {
     expect(normalized.messages[0].attachments[0]).toEqual(
       expect.objectContaining({ source: "grok-generated-image", assetId: "asset-id" })
     );
+  });
+
+  it("replaces Grok card placeholders with normalized attachment references", () => {
+    const attachments = [
+      {
+        id: "bca105",
+        title: "Search image",
+        isImage: true
+      },
+      {
+        id: "U2R6U",
+        originalName: "hello.c",
+        isImage: false
+      }
+    ];
+    const raw = [
+      "Before image",
+      '<grok:render card_id="bca105" card_type="image_card" type="render_searched_image"><argument name="image_id">foo</argument><argument name="size">LARGE</argument></grok:render>',
+      "Between",
+      '<grok:render card_id="U2R6U" card_type="rendered_file_card" type="render_file"><argument name="file_path">/home/workdir/artifacts/hello.c</argument></grok:render>',
+      "After"
+    ].join("\n\n");
+
+    expect(replaceGrokCardPlaceholders(raw, attachments)).toContain(
+      "![Search image](attachment://bca105)"
+    );
+    expect(replaceGrokCardPlaceholders(raw, attachments)).toContain(
+      "[hello.c](attachment://U2R6U)"
+    );
+
+    const searched = JSON.stringify({
+      id: "bca105",
+      cardType: "image_card",
+      image: { original: "https://example.com/image.png", title: "Search image" }
+    });
+    const normalized = normalizeGrokConversation(
+      { conversationId: "conv-1" },
+      [turn("a1", "assistant", raw, [searched])]
+    );
+    expect(normalized.messages[0].content[0].text).toContain(
+      "![Search image](attachment://bca105)"
+    );
+    expect(normalized.messages[0].content[0].text).not.toContain("<grok:render");
   });
 
   it("ignores citation cards instead of turning source icons into images", () => {
