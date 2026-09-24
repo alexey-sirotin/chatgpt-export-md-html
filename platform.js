@@ -20,6 +20,17 @@ import {
   buildClaudeSelectionIndex,
   selectClaudeBranch
 } from "./claude-selection.js";
+import {
+  getGrokConversationInPage,
+  downloadGrokAttachmentInPage,
+  abortGrokExportInPage,
+  clearGrokExportAbortInPage
+} from "./grok-api.js";
+import { normalizeGrokConversation } from "./grok-normalize.js";
+import {
+  buildGrokSelectionIndex,
+  selectGrokBranch
+} from "./grok-selection.js";
 
 export const chatgptPlatform = {
   id: "chatgpt",
@@ -91,7 +102,42 @@ export const claudePlatform = {
   normalizeConversation: normalizeClaudeConversation
 };
 
-const platforms = [chatgptPlatform, claudePlatform];
+export const grokPlatform = {
+  id: "grok",
+
+  matchesUrl(url) {
+    try {
+      return new URL(url).hostname === "grok.com";
+    } catch {
+      return false;
+    }
+  },
+
+  conversationIdFromUrl(url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname !== "grok.com") return "";
+      const match = parsed.pathname.match(/\/(?:c|chat|conversation)\/([0-9a-f-]{36})(?:\/|$)/i);
+      return match ? match[1] : "";
+    } catch {
+      return "";
+    }
+  },
+
+  conversationId(data) {
+    return data?.conversationId || "";
+  },
+
+  getConversationInPage: getGrokConversationInPage,
+  buildSelectionIndex: buildGrokSelectionIndex,
+  selectBranch: selectGrokBranch,
+  downloadAttachmentInPage: downloadGrokAttachmentInPage,
+  abortExportInPage: abortGrokExportInPage,
+  clearExportAbortInPage: clearGrokExportAbortInPage,
+  normalizeConversation: normalizeGrokConversation
+};
+
+const platforms = [chatgptPlatform, claudePlatform, grokPlatform];
 
 export function platformForUrl(url) {
   return platforms.find(platform => platform.matchesUrl(url)) || null;
