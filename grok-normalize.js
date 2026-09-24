@@ -33,7 +33,7 @@ export function parseGrokCards(cardAttachmentsJson = []) {
   return cards;
 }
 
-function attachmentFromCard(card) {
+function attachmentFromCard(card, conversationId) {
   if (!card || typeof card !== "object") return null;
 
   if (card.cardType === "generated_image_card" || card?.image_chunk?.imageUrl) {
@@ -42,11 +42,12 @@ function attachmentFromCard(card) {
     return {
       source: "grok-generated-image",
       id: card.id || card?.image_chunk?.imageUuid || remoteUrl,
+      assetId: card?.image_chunk?.imageUuid || null,
       remoteUrl,
       sourceUrl: null,
       originalName: fileNameFromUrl(remoteUrl, "image.jpg"),
       title: card.query || "Generated image",
-      mimeType: "image/jpeg",
+      mimeType: card?.image_chunk?.mimeType || "image/jpeg",
       isImage: true
     };
   }
@@ -69,12 +70,15 @@ function attachmentFromCard(card) {
   if (card.type === "render_file" || card.cardType === "rendered_file_card") {
     const remoteUrl = absoluteAssetUrl(card.url);
     if (!remoteUrl) return null;
+    const originalName = card.file_name || fileNameFromUrl(remoteUrl);
     return {
       source: "grok-generated-file",
       id: card.id || card.file_path || remoteUrl,
       remoteUrl,
       sourceUrl: null,
-      originalName: card.file_name || fileNameFromUrl(remoteUrl),
+      conversationId: conversationId || null,
+      filePath: card.file_path || (originalName ? "/" + originalName : null),
+      originalName,
       title: card.file_name || null,
       mimeType: card.mime_type || "application/octet-stream",
       size: Number.isFinite(Number(card.file_size)) ? Number(card.file_size) : null,
@@ -83,6 +87,32 @@ function attachmentFromCard(card) {
   }
 
   return null;
+}
+
+function userAssetAttachments(fileAttachments, cardAttachments, conversationId) {
+  const coveredAssetIds = new Set(
+    (cardAttachments || [])
+      .map(attachment => attachment?.assetId)
+      .filter(Boolean)
+      .map(String)
+  );
+
+  return (fileAttachments || [])
+    .map(String)
+    .filter(Boolean)
+    .filter(assetId => !coveredAssetIds.has(assetId))
+    .map(assetId => ({
+      source: "grok-user-asset",
+      id: assetId,
+      assetId,
+      conversationId: conversationId || null,
+      remoteUrl: null,
+      sourceUrl: null,
+      originalName: null,
+      title: null,
+      mimeType: "application/octet-stream",
+      isImage: false
+    }));
 }
 
 function removeGrokCardMarkup(text) {
@@ -141,9 +171,13 @@ export function normalizeGrokConversation(data, branch, omission = {}) {
 
   for (const turn of branch || []) {
     const text = cleanGrokMarkdown(typeof turn?.message === "string" ? turn.message : "");
-    const attachments = parseGrokCards(turn?.cardAttachmentsJson)
-      .map(attachmentFromCard)
+    const cardAttachments = parseGrokCards(turn?.cardAttachmentsJson)
+      .map(card => attachmentFromCard(card, data?.conversationId))
       .filter(Boolean);
+    const attachments = [
+      ...cardAttachments,
+      ...userAssetAttachments(turn?.fileAttachments, cardAttachments, data?.conversationId)
+    ];
 
     if (!text.trim() && !attachments.length) continue;
 
