@@ -1,6 +1,7 @@
 import { t } from "./utils.js";
 
 const PAGE_ABORT_CONTROLLERS_KEY = "__chatgptExportAbortControllers";
+const GROK_HISTORY_CACHE_KEY = "__chatgptExportGrokHistoryItems";
 const GROK_IMAGE_ACCEPT = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
 
 function roleFromSender(sender) {
@@ -69,8 +70,8 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
-    args: [noActiveConversation, PAGE_ABORT_CONTROLLERS_KEY, exportId],
-    func: async (noActiveConversation, registryKey, exportId) => {
+    args: [noActiveConversation, PAGE_ABORT_CONTROLLERS_KEY, GROK_HISTORY_CACHE_KEY, exportId],
+    func: async (noActiveConversation, registryKey, historyCacheKey, exportId) => {
       let signal;
       if (exportId) {
         const registry = globalThis[registryKey] ||= new Map();
@@ -160,15 +161,21 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
 
       const allResponses = (await responsesResponse.json())?.responses || [];
       const branch = activeBranch(allResponses, mountedIds);
+      const historyCache = globalThis[historyCacheKey] instanceof Map
+        ? globalThis[historyCacheKey]
+        : new Map();
       const turns = branch
         .filter(item => item && item.isControl !== true)
         .map(item => {
           const sender = String(item.sender || "").toLowerCase();
           const role = /human|user/.test(sender) ? "user" : /assistant|model/.test(sender) ? "assistant" : "unknown";
+          const id = String(item.responseId || "");
+          const cached = historyCache.get(id);
           return {
-            id: String(item.responseId || ""),
+            id,
             role,
             message: typeof item.message === "string" ? item.message : "",
+            outputChunks: Array.isArray(cached?.outputChunks) ? cached.outputChunks : [],
             cardAttachmentsJson: Array.isArray(item.cardAttachmentsJson) ? item.cardAttachmentsJson : [],
             fileAttachments: Array.isArray(item.fileAttachments) ? item.fileAttachments.map(String) : [],
             createdAt: item.createTime || null,
