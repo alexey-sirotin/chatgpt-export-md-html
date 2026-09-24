@@ -17,6 +17,11 @@ COMMON_ROOT_FILES = {
     "claude-content.js",
     "claude-normalize.js",
     "claude-selection.js",
+    "grok-api.js",
+    "grok-content.js",
+    "grok-history-hook.js",
+    "grok-normalize.js",
+    "grok-selection.js",
     "cancellation.js",
     "content.js",
     "conversation.js",
@@ -37,6 +42,7 @@ COMMON_ROOT_FILES = {
 
 FORBIDDEN_PREFIXES = (
     ".github/",
+    "docs/",
     "scripts/",
     "tests/",
     "node_modules/",

@@ -129,7 +129,7 @@ describe("nested list rendering", () => {
 });
 
 
-describe("Claude remote image fallback", () => {
+describe("remote image fallback", () => {
   const remoteMessage = {
     id: "remote-image",
     role: "assistant",
@@ -137,7 +137,7 @@ describe("Claude remote image fallback", () => {
     createdAt: "2026-09-15T09:29:00.000Z",
     content: [],
     attachments: [{
-      source: "claude-remote-image",
+      source: "grok-search-image",
       id: "img-1",
       remoteUrl: "https://example.com/image.jpg",
       sourceUrl: "https://example.com/page",
@@ -150,7 +150,7 @@ describe("Claude remote image fallback", () => {
     }]
   };
 
-  it("renders the remote image as a clickable Markdown image when archiving fails", () => {
+  it("renders any failed remote image as a clickable Markdown image", () => {
     const markdown = buildMarkdownExport({
       title: "Remote image",
       conversationUrl: null,
@@ -164,7 +164,7 @@ describe("Claude remote image fallback", () => {
     expect(markdown).not.toContain("htmlAttachmentFailed");
   });
 
-  it("renders the remote image as a clickable HTML image when archiving fails", () => {
+  it("renders any failed remote image as a clickable HTML image", () => {
     const html = buildHtmlExport({
       title: "Remote image",
       conversationUrl: null,
@@ -198,5 +198,38 @@ describe("Claude remote image fallback", () => {
 
     expect(markdown).toContain("Export/image.jpg");
     expect(markdown).not.toContain("https://example.com/image.jpg");
+  });
+});
+
+
+describe("long fenced code blocks", () => {
+  it("keeps shorter nested backtick fences inside a four-backtick block", () => {
+    const html = buildHtmlExport({
+      title: "Nested fence",
+      conversationUrl: null,
+      includeOriginalLink: false,
+      messages: [{
+        id: "nested-fence",
+        role: "assistant",
+        authorName: "Assistant",
+        createdAt: "2026-09-24T10:00:00.000Z",
+        content: [{
+          type: "text",
+          format: "markdown",
+          text: [
+            "````markdown",
+            "# heading inside fence",
+            "- list",
+            "```js",
+            'console.log("nested fence")',
+            "```",
+            "````"
+          ].join("\n")
+        }],
+        attachments: []
+      }]
+    });
+
+    expect(html).toContain('<code class="language-markdown"># heading inside fence\n- list\n```js\nconsole.log(&quot;nested fence&quot;)\n```</code>');
   });
 });

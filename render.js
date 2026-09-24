@@ -29,10 +29,14 @@ function inlineMarkdownToHtml(text) {
     return token;
   };
 
-  // Protect inline code and links before escaping the remaining source.
+  // Protect inline code, images and links before escaping the remaining source.
   source = source.replace(/`([^`\n]+)`/g, (_, code) =>
     stash(`<code>${escapeHtml(code)}</code>`)
   );
+  source = source.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, href) => {
+    const safeHref = escapeHtml(safeHtmlHref(href));
+    return stash(`<a href="${safeHref}"><img src="${safeHref}" alt="${escapeHtml(alt)}"></a>`);
+  });
   source = source.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) =>
     stash(`<a href="${escapeHtml(safeHtmlHref(href))}">${escapeHtml(label)}</a>`)
   );
@@ -179,6 +183,7 @@ function markdownToHtml(markdown) {
   let quote = [];
   let inFence = false;
   let fenceLang = "";
+  let fenceLength = 0;
   let codeLines = [];
 
   const flushParagraph = () => {
@@ -194,22 +199,29 @@ function markdownToHtml(markdown) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const fence = line.match(/^```\s*([^\s`]*)?.*$/);
+    const fence = line.match(/^(`{3,})\s*([^\s`]*)?.*$/);
     if (fence) {
+      const markerLength = fence[1].length;
       if (!inFence) {
         flushParagraph();
         flushQuote();
         inFence = true;
-        fenceLang = fence[1] || "";
+        fenceLength = markerLength;
+        fenceLang = fence[2] || "";
         codeLines = [];
-      } else {
+        continue;
+      }
+
+      const isClosingFence = markerLength >= fenceLength && /^`{3,}\s*$/.test(line);
+      if (isClosingFence) {
         const cls = fenceLang ? ` class="language-${escapeHtml(fenceLang)}"` : "";
         out.push(`<pre><code${cls}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
         inFence = false;
         fenceLang = "";
+        fenceLength = 0;
         codeLines = [];
+        continue;
       }
-      continue;
     }
 
     if (inFence) {
@@ -329,6 +341,11 @@ function isImageAttachment(attachment) {
   return /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(name);
 }
 
+function localAttachmentHref(attachment) {
+  if (attachment?.error || !attachment?.localPath) return null;
+  return markdownHref(attachment.localPath);
+}
+
 function remoteImageFallbackMarkdown(attachment) {
   const url = String(attachment?.remoteUrl || "").trim();
   if (!url) return "";
@@ -348,6 +365,76 @@ function remoteImageFallbackHtml(attachment) {
   return `<figure><a href="${target}"><img src="${src}" alt="${label}"></a></figure>`;
 }
 
+function shouldUseRemoteImageFallback(attachment) {
+  return isImageAttachment(attachment) && !!attachment?.remoteUrl && !localAttachmentHref(attachment);
+}
+
+function attachmentMap(attachments) {
+  return new Map(
+    (attachments || [])
+      .filter(attachment => attachment?.id != null)
+      .map(attachment => [String(attachment.id), attachment])
+  );
+}
+
+function resolveAttachmentReferences(text, attachments, referencedIds) {
+  const byId = attachmentMap(attachments);
+  return String(text || "").replace(/attachment:\/\/([^\s)]+)/g, (full, encodedId) => {
+    let id = encodedId;
+    try { id = decodeURIComponent(encodedId); } catch {}
+    const attachment = byId.get(String(id));
+    if (!attachment) return "#";
+
+    const localHref = localAttachmentHref(attachment);
+    if (localHref) {
+      referencedIds.add(String(id));
+      return localHref;
+    }
+
+    if (isImageAttachment(attachment) && attachment.remoteUrl) {
+      referencedIds.add(String(id));
+      return String(attachment.remoteUrl);
+    }
+
+    return "#";
+  });
+}
+
+function renderAttachmentMarkdown(attachment) {
+  if (shouldUseRemoteImageFallback(attachment)) {
+    return remoteImageFallbackMarkdown(attachment);
+  }
+  if (attachment?.error) {
+    return `*[${t("htmlAttachmentFailed", attachment.originalName || attachment.id || attachment.sandboxPath || attachment.localName || "")}]*`;
+  }
+  if (attachment?.source === "sandbox" || !attachment?.localPath) return "";
+
+  const href = markdownHref(attachment.localPath);
+  if (isImageAttachment(attachment)) {
+    const imageAlt = attachmentDisplayName(attachment, t("imageAttachment"));
+    return `[![${markdownLabel(imageAlt)}](${href})](${href})`;
+  }
+  return `[${markdownLabel(attachment.originalName || attachment.localName)}](${href})`;
+}
+
+function renderAttachmentHtml(attachment) {
+  if (shouldUseRemoteImageFallback(attachment)) {
+    return remoteImageFallbackHtml(attachment);
+  }
+  if (attachment?.error) {
+    return `<p class="attachment-error"><em>${escapeHtml(t("htmlAttachmentFailed", attachment.originalName || attachment.id || ""))}</em></p>`;
+  }
+  if (!attachment?.localPath || attachment.source === "sandbox") return "";
+
+  const href = escapeHtml(markdownHref(attachment.localPath));
+  const originalLabel = attachment.originalName || attachment.title || null;
+  const label = escapeHtml(attachmentDisplayName(attachment, attachment.localName || t("htmlAttachment")));
+  if (isImageAttachment(attachment)) {
+    return `<figure><a href="${href}"><img src="${href}" alt="${label}"></a>${originalLabel ? `<figcaption>${label}</figcaption>` : ""}</figure>`;
+  }
+  return `<p class="attachment"><a href="${href}">${label}</a></p>`;
+}
+
 export function buildMarkdownExport({ title, conversationUrl, messages, includeOriginalLink = true }) {
   const md = [`# ${title}`, ""];
   if (includeOriginalLink && conversationUrl) {
@@ -357,10 +444,8 @@ export function buildMarkdownExport({ title, conversationUrl, messages, includeO
   const visibleMessages = visibleExportMessages(messages);
   for (let index = 0; index < visibleMessages.length; index++) {
     const message = visibleMessages[index];
-    const texts = (message.content || [])
-      .filter(part => part?.type === "text" && typeof part.text === "string")
-      .map(part => part.text);
     const attachments = message.attachments || [];
+    const referencedIds = new Set();
 
     if (message.omittedBefore) {
       const markerKey = index === 0 ? "omittedStartMarker" : "omittedMessagesMarker";
@@ -368,27 +453,17 @@ export function buildMarkdownExport({ title, conversationUrl, messages, includeO
     }
 
     md.push(`### \[${localTimeIso(message.createdAt)}\] ${message.authorName || message.role || ""}`, "");
-    if (texts.length) md.push(texts.join("\n\n"), "");
 
-    for (const a of attachments) {
-      if (a.source === "claude-remote-image" && !a.localAvailable) {
-        const fallback = remoteImageFallbackMarkdown(a);
-        if (fallback) md.push(fallback, "");
-        continue;
-      }
-      if (a.error) {
-        md.push(`*[${t("htmlAttachmentFailed", a.originalName || a.id || a.sandboxPath || a.localName || "")}]*`, "");
-        continue;
-      }
-      if (a.source === "sandbox" || !a.localPath) continue;
+    for (const part of message.content || []) {
+      if (part?.type !== "text" || typeof part.text !== "string") continue;
+      const resolved = resolveAttachmentReferences(part.text, attachments, referencedIds);
+      if (resolved) md.push(resolved, "");
+    }
 
-      const href = markdownHref(a.localPath);
-      if (isImageAttachment(a)) {
-        const imageAlt = attachmentDisplayName(a, t("imageAttachment"));
-        md.push(`[![${markdownLabel(imageAlt)}](${href})](${href})`, "");
-      } else {
-        md.push(`[${markdownLabel(a.originalName || a.localName)}](${href})`, "");
-      }
+    for (const attachment of attachments) {
+      if (attachment?.id != null && referencedIds.has(String(attachment.id))) continue;
+      const rendered = renderAttachmentMarkdown(attachment);
+      if (rendered) md.push(rendered, "");
     }
   }
 
@@ -407,31 +482,19 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
     const author = escapeHtml(message.authorName || message.role || "");
     const createdAt = escapeHtml(message.createdAt || "");
     const displayTime = escapeHtml(localTimeIso(message.createdAt));
+    const messageAttachments = message.attachments || [];
+    const referencedIds = new Set();
     const body = (message.content || [])
       .filter(part => part?.type === "text" && typeof part.text === "string")
-      .map(part => markdownToHtml(part.text))
+      .map(part => markdownToHtml(
+        resolveAttachmentReferences(part.text, messageAttachments, referencedIds)
+      ))
       .join("\n");
 
-    const attachments = (message.attachments || []).map(a => {
-      if (a.source === "claude-remote-image" && !a.localAvailable) {
-        return remoteImageFallbackHtml(a);
-      }
-      if (a.error) {
-        return `<p class="attachment-error"><em>${escapeHtml(t("htmlAttachmentFailed", a.originalName || a.id || ""))}</em></p>`;
-      }
-      if (!a.localPath) return "";
-      // sandbox:/mnt/data links already occupy their original position in the
-      // message text after being rewritten to a local path. Do not append a
-      // duplicate attachment link at the end of the HTML message.
-      if (a.source === "sandbox") return "";
-      const href = escapeHtml(markdownHref(a.localPath));
-      const originalLabel = a.originalName || a.title || null;
-      const label = escapeHtml(attachmentDisplayName(a, a.localName || t("htmlAttachment")));
-      if (isImageAttachment(a)) {
-        return `<figure><a href="${href}"><img src="${href}" alt="${label}"></a>${originalLabel ? `<figcaption>${label}</figcaption>` : ""}</figure>`;
-      }
-      return `<p class="attachment"><a href="${href}">${label}</a></p>`;
-    }).join("\n");
+    const attachments = messageAttachments
+      .filter(attachment => attachment?.id == null || !referencedIds.has(String(attachment.id)))
+      .map(renderAttachmentHtml)
+      .join("\n");
 
     let omission = "";
     if (message.omittedBefore) {
@@ -491,7 +554,7 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
   th.align-center, td.align-center { text-align: center; }
   th.align-right, td.align-right { text-align: right; }
   figure { margin: 14px 0 4px; }
-  figure img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+  .content img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
   figcaption { margin-top: 5px; font-size: 0.8em; opacity: 0.65; }
   .attachment-error { opacity: 0.7; }
   .omitted-marker { margin: 16px 0; text-align: center; opacity: 0.65; }
