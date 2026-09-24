@@ -78,9 +78,14 @@ export function enc(s){ return [...new TextEncoder().encode(s)]; }
 
 // Markdown link destinations are URLs, not raw filesystem paths.
 // Encode each path segment so spaces, Cyrillic and URL-significant
-// characters work consistently across Markdown renderers.
+// characters work consistently across Markdown renderers. Parentheses are
+// additionally escaped because the lightweight HTML Markdown parser uses ')'
+// as the destination terminator.
 export function markdownHref(localPath) {
-  return localPath.split("/").map(encodeURIComponent).join("/");
+  return localPath
+    .split("/")
+    .map(part => encodeURIComponent(part).replaceAll("(", "%28").replaceAll(")", "%29"))
+    .join("/");
 }
 
 export function markdownLabel(value) {
