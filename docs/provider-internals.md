@@ -10,7 +10,7 @@ This document records the provider-specific behavior we have observed while impl
 > - Endpoint shapes, field names, authentication requirements, DOM structures, and download flows may change without notice.
 > - Treat this document as a working reverse-engineering reference. When behavior changes, update both the adapter and these notes.
 
-Last substantially updated: 2026-09-24.
+Last substantially updated: 2026-09-25.
 
 ---
 
@@ -25,6 +25,7 @@ Across all providers tested so far, the same architectural lessons keep recurrin
 5. **The final renderer should stay provider-agnostic.** Provider adapters should return normalized messages and attachments; Markdown/HTML/JSON/ZIP logic should not need scattered provider checks.
 6. **Selection UI and extraction should be separate concerns.** DOM can still be useful to identify what the user is currently looking at, even when the complete conversation comes from an API.
 7. **Remote-image fallback is valid behavior.** Some third-party images cannot be fetched because of CORS or provider restrictions. In that case the exporter should preserve a usable remote link rather than fail the export.
+8. **A persisted REST response is not always the whole semantic representation.** A provider may expose the complete message graph through REST while a separate streamed/history representation preserves richer ordering information for inline cards.
 
 The normalized shape used by the multi-provider architecture is conceptually:
 
@@ -406,13 +407,16 @@ During testing, a Claude share-link view lost at least one attachment that was p
 
 # Grok
 
-## Source of truth
+## History sources: graph versus semantic composition
 
-Grok was initially implemented from the rendered transcript plus React state because the obvious conversation endpoint only returned metadata. That approach exposed a major problem: **the transcript DOM is virtualized**.
+Grok's transcript DOM is virtualized, so it is not a reliable source of complete conversation history. Long chats may have only a subset of turns mounted at any moment. The exporter therefore does not scroll the transcript to harvest messages.
 
-A long conversation can have only a small subset of turns mounted at any one time. The original implementation had to scroll the transcript to harvest all turns, which caused visible page movement when opening the popup, entering selection mode, and exporting.
+Grok currently requires two complementary internal data sources:
 
-Further reverse engineering found the proper internal conversation APIs, so current extraction no longer needs transcript scrolling.
+1. **REST `/responses`** provides the complete persisted response graph and basic message/attachment metadata.
+2. **Gateway history events** preserve richer semantic composition for assistant output, including the exact position of some inline cards.
+
+Neither replaces the other in the current implementation.
 
 ## Conversation ID and metadata
 
@@ -460,15 +464,15 @@ This endpoint does **not** contain the complete turn list.
 
 ## Response graph APIs
 
-The important discovery is that Grok exposes the response graph directly.
-
 ### Full responses
+
+The main persisted graph source is:
 
 ```text
 GET /rest/app-chat/conversations/{conversationId}/responses?includeThreads=false
 ```
 
-Observed response shape contains fields such as:
+Observed response fields include:
 
 ```text
 responseId
@@ -483,7 +487,7 @@ imageAttachments
 fileAttachments
 ```
 
-In the test conversation this endpoint returned every node in the conversation graph, including alternative branches.
+The tested branched conversation returned every graph node, including alternative branches.
 
 ### Response nodes
 
@@ -515,38 +519,106 @@ Content-Type: application/json
 }
 ```
 
-The generated API client confirms that the request body is effectively just `responseIds` and the response contains `responses`.
+The generated API client indicates that the request body is effectively `responseIds` and the response contains `responses`. The web UI has been observed loading response bodies in chunks while keeping the transcript virtualized.
 
-The web UI uses response-node data plus `load-responses` in chunks (observed around 30 responses), which explains why the visible transcript can stay virtualized even for long conversations.
-
-For our exporter, `/responses` is currently the simplest complete source.
+For the exporter, `/responses` is currently the simplest complete persisted graph source.
 
 ## Active branch reconstruction
 
-`/responses` returns the graph, not "the 18 currently visible turns" as a preselected flat list.
+`/responses` returns the graph rather than one preselected flat transcript.
 
-The adapter builds parent chains from leaf nodes using:
+The adapter builds parent chains using:
 
 ```text
 responseId
 parentResponseId
 ```
 
-Grok does not currently expose an obvious equivalent of Claude's `current_leaf_message_uuid` in the metadata endpoint we inspected.
+Grok did not expose an obvious equivalent of Claude's `current_leaf_message_uuid` in the metadata inspected during implementation.
 
-Current branch choice therefore uses the mounted DOM response IDs as a **hint**, not as the data source:
+Current branch selection therefore uses mounted DOM response IDs only as a **hint**:
 
 1. collect currently mounted `[id^="response-"]` IDs;
 2. build a candidate root-to-leaf path for every leaf;
-3. prefer the path with greatest overlap with the mounted IDs;
+3. prefer the path with the greatest overlap with mounted IDs;
 4. break ties by newest leaf `createTime`;
 5. finally break ties by response-array position.
 
-This removed all transcript scrolling while still following the branch currently shown by Grok in tested cases.
+This allows complete export without transcript scrolling while following the visibly selected branch in tested cases.
+
+## Gateway history and `output_chunks`
+
+REST `/responses` is sufficient for the complete graph, but it is not sufficient to reconstruct the exact inline placement of every generated/search card.
+
+During initial history load, Grok emits gateway/WebSocket events including:
+
+```text
+conversation.history.item
+conversation.history.done
+```
+
+For assistant history items, the useful richer representation is:
+
+```text
+item.x_grok.output_chunks
+```
+
+`output_chunks` preserves the order in which assistant text and rendered cards belong in the message. The exporter captures this history early through `grok-history-hook.js`, installed at `document_start` in the page's `MAIN` world, and stores chunks keyed by response ID. `grok-api.js` then merges those chunks into the corresponding REST response before normalization.
+
+Because this hook must observe the initial history load, reloading the extension alone is not enough during manual development tests: the Grok tab must also be reloaded so the hook is present before history arrives.
+
+## Inline card composition
+
+`grok-normalize.js` can reconstruct assistant content from `output_chunks` when available. Relevant chunk/card behavior includes:
+
+- assistant response text chunks;
+- `render_searched_image`;
+- `render_start` for generated images;
+- later `render_generated_image` metadata;
+- citation/service chunks that should not leak provider-internal markup;
+- notetaker/thinking headers that are filtered from normal conversational output.
+
+If gateway history chunks are unavailable, normalization falls back to the ordinary REST `message` representation.
+
+### Generated image lifecycle
+
+Generated images are important because their history representation is two-phase.
+
+An early chunk can contain:
+
+```json
+{
+  "render_start": {
+    "id": "TYiPy",
+    "generated_image": {}
+  }
+}
+```
+
+`render_start` establishes the inline anchor/placeholder at the correct position relative to surrounding text.
+
+Later history can contain:
+
+```json
+{
+  "render_generated_image": {
+    "id": "TYiPy",
+    "image_chunk": {
+      "imageUuid": "...",
+      "imageUrl": "...",
+      "mime_type": "image/jpeg"
+    }
+  }
+}
+```
+
+The later `render_generated_image` enriches the already-positioned placeholder with final card/asset metadata. It must **not** be treated as a second placement event.
+
+This distinction fixed the bug where a generated image downloaded correctly but appeared at the end of the assistant message instead of at its actual inline position.
 
 ## DOM / React observations
 
-Useful selectors observed during reconnaissance:
+Useful selectors observed during reconnaissance include:
 
 ```text
 [id^="response-"]
@@ -557,17 +629,15 @@ Useful selectors observed during reconnaissance:
 .message-bubble
 ```
 
-Assistant `.response-content-markdown` is cleaner than outer turn text because service/status text such as elapsed-time labels can exist outside it.
+The DOM remains useful for selection and active-branch hints, but must not be used as the complete history source.
 
-React props on response content exposed raw assistant Markdown and `cardAttachmentsJson`, which was useful before the API route was found.
-
-The DOM remains useful for selection/active-branch hints, but must not be walked/scroll-harvested for complete export.
+React props were useful during reconnaissance because they exposed raw assistant Markdown and attachment information, but production extraction now relies on the REST graph plus captured gateway history rather than scroll-harvesting React state.
 
 ## `cardAttachmentsJson`
 
-This is one of the most important Grok fields.
+The REST response field `cardAttachmentsJson` remains important for persisted attachment metadata.
 
-Despite the name, the API currently returns it as an **array of JSON strings**, not as an array of already-parsed objects. Each entry must be parsed separately.
+Despite its name, it has been observed as an **array of JSON strings**, not already-parsed objects. Each entry must be parsed separately.
 
 Observed card types include the following.
 
@@ -585,9 +655,9 @@ Example logical shape:
 }
 ```
 
-Raw assistant Markdown can contain Grok placeholder markup such as `<grok:render ...>` / `<grok-card ...>`. The exporter currently strips these placeholders so they do not leak into Markdown.
+Raw assistant Markdown can contain Grok placeholder markup such as `<grok:render ...>` / `<grok-card ...>`. The exporter strips provider-internal placeholders rather than leaking them into exported Markdown.
 
-A remaining improvement is to preserve the human-visible citation/source label/link semantically rather than merely removing the placeholder.
+Preserving richer human-visible citation labels/links remains a possible future improvement.
 
 ### External/search image
 
@@ -611,13 +681,13 @@ Observed logical shape:
 }
 ```
 
-Preferred resource order for export is generally:
+Preferred resource order is generally:
 
-1. `image.original`
-2. `image.thumbnail`
-3. remote link fallback if the bytes cannot be fetched
+1. `image.original`;
+2. `image.thumbnail`;
+3. remote fallback when bytes cannot be downloaded.
 
-These are third-party resources and may fail because of CORS or origin policy.
+Third-party resources may fail because of CORS or origin policy; that failure should not abort the export.
 
 ### Generated / edited image
 
@@ -643,19 +713,19 @@ image_chunk.moderated
 image_chunk.rRated
 ```
 
-`image_chunk.imageUrl` may be relative, e.g.:
+`image_chunk.imageUrl` may be relative, for example:
 
 ```text
 users/{userId}/generated/{uuid}/image.jpg
 ```
 
-which resolves to:
+which resolves under:
 
 ```text
-https://assets.grok.com/users/{userId}/generated/{uuid}/image.jpg
+https://assets.grok.com/
 ```
 
-Some generated-image cards (notably moderated/older variants) can contain the UUID but no `imageUrl`; those need separate treatment/fallback and should not be assumed downloadable solely from the card.
+Some generated-image variants can contain an asset UUID without a directly usable image URL, so asset metadata lookup remains useful.
 
 ### Rendered/generated file
 
@@ -677,77 +747,42 @@ Observed logical shape:
 }
 ```
 
-Example tested artifact: `hello.c`.
+Example manually tested artifact: `hello.c`.
 
-## Grok asset metadata
+## Asset metadata and user-uploaded files
 
-Generated image UUIDs can also be used as asset IDs:
+Grok asset IDs can be resolved through:
 
 ```text
 GET /rest/assets/{assetId}
 ```
 
-Observed image metadata includes:
+Useful returned fields include:
 
 ```text
 assetId
 mimeType
 name
 sizeBytes
-createTime
-lastUseTime
-summary
-previewImageKey
 key
-auxKeys
-isDeleted
-fileSource
+createTime
 sourceConversationId
 isModelGenerated
-updateTime
-isLatest
-inlineStatus
-isRootAssetCreatedByModel
-rootAssetSourceConversationId
-sharedWithTeam
-sharedWithUserIds
-isPublic
 width
 height
-rRated
-thumbhash
-ownerUserId
 ```
 
-For a generated image, `key` can look like:
+For generated images and user-uploaded files, `key` can identify the actual object path under `assets.grok.com`.
 
-```text
-users/{userId}/generated/{uuid}/image.jpg
-```
+A user-uploaded attachment may appear only as a UUID in `fileAttachments`, with no corresponding rich card in `cardAttachmentsJson`. The production adapter therefore resolves such UUIDs through `/rest/assets/{assetId}` and constructs a normalized attachment from the returned metadata.
 
-and `fileSource` has been observed as:
+Manual testing confirmed a user-uploaded PNG can be resolved, downloaded, archived locally and rendered correctly.
 
-```text
-IMAGINE_GENERATED_FILE_SOURCE
-```
+## Downloading Grok-hosted images and uploaded assets
 
-This metadata endpoint is useful for validation and future fallback logic, but it does not itself return a signed download URL in the tested generated-image case.
+A naive extension/background fetch from `assets.grok.com` with omitted credentials returned `403` during testing.
 
-## Downloading Grok generated images
-
-A subtle CDN behavior was observed with `assets.grok.com`.
-
-A naive extension/background fetch such as:
-
-```js
-fetch(url, { credentials: "omit" })
-```
-
-returned `403`.
-
-A normal page `fetch()` with credentials but generic request headers could also fail / encounter CORS behavior.
-
-The same image that Grok successfully renders can be fetched from page context when the request looks like an image request. This exact experiment succeeded:
+Successful page-context image download used the authenticated Grok session and image-like request headers, for example:
 
 ```js
 const response = await fetch(url, {
@@ -761,26 +796,15 @@ const response = await fetch(url, {
 });
 ```
 
-Observed result for a tested JPEG:
+The same authenticated page-context approach is used for Grok-owned uploaded assets resolved through their asset `key`.
 
-```text
-status: 200
-type: cors
-content-type: image/jpeg
-bytes: 407712
-```
+Do not rely on manually setting browser-controlled `Sec-Fetch-*` headers. The tested requirements were page context, credentials, Grok referrer and an image-like `Accept` header.
 
-This is the preferred direction for generated-image downloads.
+## Downloading rendered/generated files
 
-Do not rely on manually setting browser-controlled `Sec-Fetch-*` headers. The important tested difference was that a page-context request with credentials, Grok referrer, and an image-like `Accept` succeeded.
+Rendered/generated files such as `hello.c` use a different path from ordinary Grok-hosted images.
 
-## Downloading Grok rendered/generated files
-
-Rendered files such as `hello.c` behave differently from generated images.
-
-Direct access to the card's `assets.grok.com/.../hello.c` URL returned `403` in testing.
-
-Grok exposes a conversation filesystem endpoint:
+Direct access to the card's `assets.grok.com` URL returned `403` in testing. The exporter instead calls:
 
 ```text
 GET /rest/conversations/files/content
@@ -788,7 +812,7 @@ GET /rest/conversations/files/content
     &path={path}
 ```
 
-For `/hello.c`, the response included:
+Observed response fields include:
 
 ```text
 dataUrl
@@ -799,63 +823,92 @@ signedUrl
 downloadSignedUrl
 ```
 
-The returned `signedUrl` / `downloadSignedUrl` pointed to a time-limited Google Cloud Storage URL and is the correct download mechanism for this class of generated file.
+The exporter prefers a fresh `downloadSignedUrl` and falls back to `signedUrl` where appropriate, then downloads the actual bytes and stores them under the normalized attachment name.
 
-Therefore rendered-file handling should be:
+Signed URLs are temporary credentials and must not be persisted in engineering docs, fixtures or logs.
 
-1. identify the conversation file path/name from the card;
-2. call `/rest/conversations/files/content`;
-3. prefer `downloadSignedUrl` (or `signedUrl` where appropriate);
-4. fetch the signed URL;
-5. store bytes in ZIP under the normalized attachment name.
+Manual testing confirmed `hello.c` is downloaded and included in the ZIP.
 
 ## `fileAttachments` observations
 
-Grok responses also contain `fileAttachments`, usually as asset/file UUID strings.
+`fileAttachments` contains asset/file UUIDs and is supplementary rather than authoritative for all attachment classes.
 
-Examples observed:
+Observed cases include:
 
-- generated images often also appeared in `fileAttachments` using the image UUID;
-- a user-uploaded image had a `fileAttachments` UUID even though `cardAttachmentsJson` was empty on the user turn;
-- rendered `hello.c` had its rich card in `cardAttachmentsJson` but an empty `fileAttachments` array.
+- generated images also represented by their image UUID;
+- user-uploaded images represented by UUID even when `cardAttachmentsJson` is empty;
+- generated `hello.c` represented by a rich rendered-file card while `fileAttachments` is empty.
 
-Conclusion: **do not use `fileAttachments` as the only attachment source**. It is useful supplementary metadata, while `cardAttachmentsJson` is currently essential for assistant-rendered cards/files/images.
+Therefore attachment discovery combines `cardAttachmentsJson`, `fileAttachments`, gateway inline composition and provider-specific asset/file resolution rather than treating any one field as universal.
 
-User-uploaded Grok attachments deserve additional dedicated fixtures because they can be represented differently from assistant-generated cards.
+## Inline references and local rendering
+
+After downloads finish, internal attachment references are resolved to local archive paths.
+
+If an attachment has already been inserted inline through a placeholder, the renderer must not append it again at the end of the turn. Attachments with no inline-position marker, such as ordinary user uploads, may still be rendered after the message text.
+
+For successfully downloaded generated/search/user images, the local copy is preferred over the remote URL in both Markdown and HTML. Remote URLs remain fallback only when local acquisition failed.
+
+The generic HTML renderer understands Markdown image syntax:
+
+```md
+![alt](path)
+```
+
+and image paths are URL-encoded so filenames such as:
+
+```text
+image (2).jpg
+```
+
+remain usable in both Markdown and HTML.
+
+Inline images are constrained by generic content CSS:
+
+```css
+.content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+```
+
+so provider-specific images do not overflow message cards.
 
 ## Markdown cleanup specific to Grok
 
-Raw Grok assistant Markdown can contain provider placeholders. The adapter currently removes Grok card/render markup before rendering.
+Raw Grok assistant Markdown can contain provider placeholders and service-only chunks. The adapter removes Grok-specific render/card markup and filters observed notetaker/thinking headers from normal exported conversation text.
 
-Another discovered edge case is nested Markdown fences. Grok can return an outer fenced block such as ```` ```markdown ```` containing inner triple-backtick fences. A normal Markdown renderer may prematurely close the outer fence.
-
-The exporter protects this by widening the outer Markdown fence when needed, and the generic HTML renderer supports fences longer than three backticks.
+Another edge case is nested Markdown fences. Grok can return an outer fenced block such as ` ```markdown ` containing inner triple-backtick fences. The exporter protects this by widening the outer fence where needed, while the generic HTML renderer accepts fences longer than three backticks.
 
 ## Current Grok strategy
 
-Conversation extraction:
+Conversation/history:
 
 - metadata from `conversations_v2`;
-- complete graph from `/responses?includeThreads=false`;
+- complete persisted graph from `/responses?includeThreads=false`;
 - active branch reconstructed from parent links, using mounted DOM IDs only as branch hints;
+- gateway `conversation.history.item` capture for `item.x_grok.output_chunks`;
+- `render_start` as generated-image inline anchor and `render_generated_image` as later metadata enrichment;
 - no transcript scrolling.
 
-Attachments:
+Attachments/downloads:
 
-- parse every `cardAttachmentsJson` string;
-- generated images: fetch from `assets.grok.com` in page context with the tested image-like request;
-- rendered files: resolve through `/rest/conversations/files/content` and then use the signed URL;
-- third-party/search images: best-effort direct fetch, otherwise preserve remote fallback;
-- continue improving user-uploaded attachment coverage.
+- parse `cardAttachmentsJson` entries;
+- use `fileAttachments` as supplementary UUID references;
+- resolve asset UUIDs through `/rest/assets/{assetId}`;
+- download Grok-hosted images/user assets in authenticated page context;
+- resolve rendered/generated files through `/rest/conversations/files/content` and fresh signed URLs;
+- third-party/search images use best-effort download with remote fallback;
+- resolve inline references to local paths after successful download and suppress duplicate end-of-turn rendering.
 
 ## Grok-specific known issues / follow-ups
 
-- Preserve citation labels/links semantically instead of merely stripping Grok placeholder markup.
-- Add the newly discovered generated-image request behavior to the production downloader (the current PR code still used the older direct background fetch when these notes were written).
-- Add `/rest/conversations/files/content` resolution for rendered/generated files instead of direct `assets.grok.com` fetching.
-- Expand coverage for user-uploaded files/images whose response `fileAttachments` UUIDs are not mirrored by card metadata.
-- Keep active-branch heuristics under test because Grok metadata did not expose an explicit current-leaf field in the inspected response.
-- Remove any fallback that treats an arbitrary React string as a valid payload if legacy React-state extraction code is retained anywhere.
+- Preserve citation labels/links semantically instead of merely stripping provider placeholders.
+- Keep active-branch heuristics under test because no explicit current-leaf field was found in the inspected metadata.
+- Keep gateway history capture under regression coverage because exact inline composition depends on observing initial history events.
+- Broaden fixtures for Grok attachment/card variants as new response shapes are encountered.
 
 ---
 
@@ -863,14 +916,15 @@ Attachments:
 
 | Concern | ChatGPT | Claude | Grok |
 | --- | --- | --- | --- |
-| Primary history source | `/backend-api/conversation/{id}` | organization `chat_conversations/{id}` | `/rest/app-chat/conversations/{id}/responses` |
+| Primary graph/history source | `/backend-api/conversation/{id}` | organization `chat_conversations/{id}` | `/rest/app-chat/conversations/{id}/responses` |
+| Supplemental semantic composition source | n/a | structured `content[]` in same response | gateway `conversation.history.item -> item.x_grok.output_chunks` |
 | Graph relation | `mapping` node parent/children | `parent_message_uuid` | `parentResponseId` |
 | Explicit active leaf | `current_node` | `current_leaf_message_uuid` | Not found in inspected metadata; inferred with DOM hint + leaf recency |
-| DOM required for full history | No | No | No (after API discovery) |
+| DOM required for full history | No | No | No |
 | DOM useful for selection/branch hint | Yes | Yes | Yes |
-| Main structured attachment source | message metadata/content + `safe_urls` | message `attachments` / `files` / content structures | `cardAttachmentsJson` + `fileAttachments` |
+| Main structured attachment source | message metadata/content + `safe_urls` | message `attachments` / `files` / content structures | `cardAttachmentsJson` + `fileAttachments` + `output_chunks` |
 | Generated/tool file special path | interpreter sandbox download | `wiggle/download-file` | conversation filesystem `files/content` -> signed URL |
-| Generated image path | Estuary/file references, provider metadata | local resource or remote image | `assets.grok.com` with page image-like fetch |
+| Generated image path | Estuary/file references, provider metadata | local resource or remote image | `assets.grok.com` with authenticated page-context image fetch |
 | Third-party remote image fallback | Yes | Yes | Yes |
 
 ---
@@ -884,11 +938,12 @@ When a provider changes and compatibility breaks, check in this order:
 3. Have graph fields or current-leaf fields changed?
 4. Are role/message/content fields still in the same shape?
 5. Did attachment metadata move or change representation?
-6. Are generated images still downloadable by the same mechanism?
-7. Are generated/tool files still resolved by the same endpoint?
-8. Are CORS/referrer/credential requirements different?
-9. Did the provider change transcript virtualization or selection-related DOM attributes?
-10. Does branch reconstruction still match the branch visibly selected in the UI?
-11. Do full and selected exports still preserve omissions, order, images, files, and fallback links?
+6. Is there a separate streamed/history representation that affects inline ordering?
+7. Are generated images still downloadable by the same mechanism?
+8. Are generated/tool files still resolved by the same endpoint?
+9. Are CORS/referrer/credential requirements different?
+10. Did the provider change transcript virtualization or selection-related DOM attributes?
+11. Does branch reconstruction still match the branch visibly selected in the UI?
+12. Do full and selected exports still preserve omissions, order, images, files, inline placement and fallback links?
 
 Keep provider-specific discoveries here even if the production adapter later hides the complexity behind a small normalized interface.
