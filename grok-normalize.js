@@ -46,7 +46,7 @@ function attachmentFromCard(card, conversationId) {
       remoteUrl,
       sourceUrl: null,
       originalName: fileNameFromUrl(remoteUrl, "image.jpg"),
-      title: card.query || "Generated image",
+      title: card.query || card?.image_chunk?.imageTitle || "Generated image",
       mimeType: card?.image_chunk?.mimeType || "image/jpeg",
       isImage: true
     };
@@ -115,10 +115,52 @@ function userAssetAttachments(fileAttachments, cardAttachments, conversationId) 
     }));
 }
 
+function cardIdFromAttributes(attributes) {
+  const match = String(attributes || "").match(/(?:\bcard_id|\bdata-id)\s*=\s*["']([^"']+)["']/i);
+  return match ? match[1] : null;
+}
+
+function markdownLabel(value, fallback) {
+  return String(value || fallback || "Attachment")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
+}
+
+function attachmentReference(attachment) {
+  if (!attachment?.id) return "";
+  const href = `attachment://${encodeURIComponent(String(attachment.id))}`;
+  const label = markdownLabel(
+    attachment.title || attachment.originalName,
+    attachment.isImage ? "Image" : "Attachment"
+  );
+  return attachment.isImage ? `![${label}](${href})` : `[${label}](${href})`;
+}
+
+export function replaceGrokCardPlaceholders(text, attachments = []) {
+  const byId = new Map(
+    (attachments || [])
+      .filter(attachment => attachment?.id)
+      .map(attachment => [String(attachment.id), attachment])
+  );
+
+  const replace = (_full, attributes) => {
+    const id = cardIdFromAttributes(attributes);
+    if (!id) return "";
+    return attachmentReference(byId.get(String(id)));
+  };
+
+  return String(text || "")
+    .replace(/<grok:render\b([^>]*)>[\s\S]*?<\/grok:render>/gi, replace)
+    .replace(/<grok-card\b([^>]*)>[\s\S]*?<\/grok-card>/gi, replace);
+}
+
 function removeGrokCardMarkup(text) {
   return String(text || "")
-    .replace(/<grok:render\b[^>]*>\s*<\/grok:render>/gi, "")
-    .replace(/<grok-card\b[^>]*>\s*<\/grok-card>/gi, "");
+    .replace(/<grok:render\b[^>]*>[\s\S]*?<\/grok:render>/gi, "")
+    .replace(/<grok-card\b[^>]*>[\s\S]*?<\/grok-card>/gi, "");
 }
 
 function protectNestedMarkdownFences(text) {
@@ -170,7 +212,6 @@ export function normalizeGrokConversation(data, branch, omission = {}) {
   const messages = [];
 
   for (const turn of branch || []) {
-    const text = cleanGrokMarkdown(typeof turn?.message === "string" ? turn.message : "");
     const cardAttachments = parseGrokCards(turn?.cardAttachmentsJson)
       .map(card => attachmentFromCard(card, data?.conversationId))
       .filter(Boolean);
@@ -178,6 +219,11 @@ export function normalizeGrokConversation(data, branch, omission = {}) {
       ...cardAttachments,
       ...userAssetAttachments(turn?.fileAttachments, cardAttachments, data?.conversationId)
     ];
+    const withReferences = replaceGrokCardPlaceholders(
+      typeof turn?.message === "string" ? turn.message : "",
+      cardAttachments
+    );
+    const text = cleanGrokMarkdown(withReferences);
 
     if (!text.trim() && !attachments.length) continue;
 
