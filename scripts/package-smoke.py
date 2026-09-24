@@ -19,6 +19,7 @@ COMMON_ROOT_FILES = {
     "claude-selection.js",
     "grok-api.js",
     "grok-content.js",
+    "grok-history-hook.js",
     "grok-normalize.js",
     "grok-selection.js",
     "cancellation.js",
