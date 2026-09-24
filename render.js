@@ -554,7 +554,7 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
   th.align-center, td.align-center { text-align: center; }
   th.align-right, td.align-right { text-align: right; }
   figure { margin: 14px 0 4px; }
-  figure img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+  .content img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
   figcaption { margin-top: 5px; font-size: 0.8em; opacity: 0.65; }
   .attachment-error { opacity: 0.7; }
   .omitted-marker { margin: 16px 0; text-align: center; opacity: 0.65; }
