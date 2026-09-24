@@ -64,6 +64,16 @@
         "https://grok.com/*"
       ],
       "js": [
+        "grok-history-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://grok.com/*"
+      ],
+      "js": [
         "grok-content.js"
       ],
       "run_at": "document_idle"
