@@ -1,6 +1,7 @@
 import { t } from "./utils.js";
 
 const PAGE_ABORT_CONTROLLERS_KEY = "__chatgptExportAbortControllers";
+const GROK_IMAGE_ACCEPT = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
 
 function roleFromSender(sender) {
   const value = String(sender || "").toLowerCase();
@@ -169,6 +170,7 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
             role,
             message: typeof item.message === "string" ? item.message : "",
             cardAttachmentsJson: Array.isArray(item.cardAttachmentsJson) ? item.cardAttachmentsJson : [],
+            fileAttachments: Array.isArray(item.fileAttachments) ? item.fileAttachments.map(String) : [],
             createdAt: item.createTime || null,
             model: item.model || item.requestMetadata?.model || null,
             parentResponseId: item.parentResponseId || null
@@ -199,39 +201,25 @@ function attachmentMetadata(attachment) {
     bytes: null,
     type: attachment?.mimeType || "application/octet-stream",
     originalName: attachment?.originalName || attachment?.title || null,
-    fileId: attachment?.id || null,
+    fileId: attachment?.assetId || attachment?.id || null,
     libraryFileId: null
   };
 }
 
 export async function downloadGrokAttachmentInPage(tabId, attachment, metadataOnly = false, exportId = null) {
-  if (metadataOnly) return attachmentMetadata(attachment);
-  const remoteUrl = attachment?.remoteUrl;
-  if (!remoteUrl) throw new Error("Grok attachment URL is missing");
-
-  const url = new URL(remoteUrl);
-  if (url.hostname === "assets.grok.com") {
-    const response = await fetch(remoteUrl, { credentials: "omit" });
-    if (!response.ok) throw new Error("Grok asset GET: " + response.status);
-    const blob = await response.blob();
-    const declaredType = attachment?.mimeType || "application/octet-stream";
-    const receivedType = blob.type || response.headers.get("content-type") || "";
-    const type = receivedType && receivedType !== "application/octet-stream" ? receivedType : declaredType;
-    const buffer = await blob.arrayBuffer();
-    return {
-      bytes: Array.from(new Uint8Array(buffer)),
-      type,
-      originalName: attachment?.originalName || attachment?.title || null,
-      fileId: attachment?.id || null,
-      libraryFileId: null
-    };
+  if (
+    metadataOnly &&
+    attachment?.source !== "grok-user-asset" &&
+    attachment?.source !== "grok-generated-file"
+  ) {
+    return attachmentMetadata(attachment);
   }
 
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
-    args: [attachment, PAGE_ABORT_CONTROLLERS_KEY, exportId],
-    func: async (attachment, registryKey, exportId) => {
+    args: [attachment, metadataOnly, PAGE_ABORT_CONTROLLERS_KEY, exportId, GROK_IMAGE_ACCEPT],
+    func: async (attachment, metadataOnly, registryKey, exportId, imageAccept) => {
       let signal;
       if (exportId) {
         const registry = globalThis[registryKey] ||= new Map();
@@ -242,20 +230,119 @@ export async function downloadGrokAttachmentInPage(tabId, attachment, metadataOn
         }
         signal = controller.signal;
       }
-      const response = await fetch(attachment.remoteUrl, { credentials: "omit", mode: "cors", signal });
-      if (!response.ok) throw new Error("Grok attachment GET: " + response.status);
-      const blob = await response.blob();
-      const declaredType = attachment.mimeType || "application/octet-stream";
-      const receivedType = blob.type || response.headers.get("content-type") || "";
-      const type = receivedType && receivedType !== "application/octet-stream" ? receivedType : declaredType;
-      const buffer = await blob.arrayBuffer();
-      return {
-        bytes: Array.from(new Uint8Array(buffer)),
-        type,
-        originalName: attachment.originalName || attachment.title || null,
-        fileId: attachment.id || null,
-        libraryFileId: null
+
+      const asResult = async (response, fallbackType, originalName, fileId) => {
+        if (!response.ok) throw new Error("Grok attachment GET: " + response.status);
+        const blob = await response.blob();
+        const receivedType = blob.type || response.headers.get("content-type") || "";
+        const type = receivedType && receivedType !== "application/octet-stream"
+          ? receivedType
+          : (fallbackType || "application/octet-stream");
+        const buffer = await blob.arrayBuffer();
+        return {
+          bytes: Array.from(new Uint8Array(buffer)),
+          type,
+          originalName: originalName || null,
+          fileId: fileId || null,
+          libraryFileId: null
+        };
       };
+
+      if (attachment?.source === "grok-generated-file") {
+        const conversationId = attachment.conversationId;
+        const filePath = attachment.filePath || (attachment.originalName ? "/" + attachment.originalName : "");
+        if (!conversationId || !filePath) {
+          throw new Error("Grok generated file context is incomplete");
+        }
+
+        const params = new URLSearchParams({
+          conversationId: String(conversationId),
+          path: String(filePath)
+        });
+        const metaResponse = await fetch(
+          "/rest/conversations/files/content?" + params,
+          { credentials: "include", signal }
+        );
+        if (!metaResponse.ok) {
+          throw new Error("Grok file metadata GET: " + metaResponse.status);
+        }
+        const meta = await metaResponse.json();
+        const originalName = attachment.originalName || filePath.split("/").filter(Boolean).at(-1) || null;
+        const type = meta?.mimeType || attachment.mimeType || "application/octet-stream";
+
+        if (metadataOnly) {
+          return {
+            bytes: null,
+            type,
+            originalName,
+            fileId: attachment.id || null,
+            libraryFileId: null
+          };
+        }
+
+        const signedUrl = meta?.downloadSignedUrl || meta?.signedUrl;
+        if (!signedUrl) throw new Error("Grok generated file signed URL is missing");
+        const response = await fetch(signedUrl, { credentials: "omit", mode: "cors", signal });
+        return await asResult(response, type, originalName, attachment.id || null);
+      }
+
+      if (attachment?.source === "grok-user-asset") {
+        const assetId = attachment.assetId || attachment.id;
+        if (!assetId) throw new Error("Grok asset id is missing");
+
+        const metaResponse = await fetch(
+          "/rest/assets/" + encodeURIComponent(String(assetId)),
+          { credentials: "include", signal }
+        );
+        if (!metaResponse.ok) throw new Error("Grok asset metadata GET: " + metaResponse.status);
+        const meta = await metaResponse.json();
+        const originalName = meta?.name || attachment.originalName || attachment.title || null;
+        const type = meta?.mimeType || attachment.mimeType || "application/octet-stream";
+
+        if (metadataOnly) {
+          return {
+            bytes: null,
+            type,
+            originalName,
+            fileId: assetId,
+            libraryFileId: null
+          };
+        }
+
+        const key = typeof meta?.key === "string" ? meta.key.trim() : "";
+        if (!key) throw new Error("Grok asset key is missing");
+        const remoteUrl = /^https?:\/\//i.test(key)
+          ? key
+          : "https://assets.grok.com/" + key.replace(/^\/+/, "");
+        const response = await fetch(remoteUrl, {
+          credentials: "include",
+          mode: "cors",
+          referrer: "https://grok.com/",
+          headers: type.startsWith("image/") ? { Accept: imageAccept } : { Accept: "*/*" },
+          signal
+        });
+        return await asResult(response, type, originalName, assetId);
+      }
+
+      const remoteUrl = attachment?.remoteUrl;
+      if (!remoteUrl) throw new Error("Grok attachment URL is missing");
+
+      const url = new URL(remoteUrl, location.href);
+      const isGrokAsset = url.hostname === "assets.grok.com";
+      const isImage = attachment?.isImage === true || String(attachment?.mimeType || "").startsWith("image/");
+      const response = await fetch(remoteUrl, {
+        credentials: isGrokAsset ? "include" : "omit",
+        mode: "cors",
+        ...(isGrokAsset ? { referrer: "https://grok.com/" } : {}),
+        ...(isImage ? { headers: { Accept: imageAccept } } : {}),
+        signal
+      });
+      return await asResult(
+        response,
+        attachment?.mimeType || "application/octet-stream",
+        attachment?.originalName || attachment?.title || null,
+        attachment?.assetId || attachment?.id || null
+      );
     }
   });
   return result;
