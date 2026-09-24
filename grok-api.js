@@ -127,23 +127,27 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
           }
         };
 
-        scroller.scrollTop = 0;
-        await sleep(250);
+        // Grok's virtualizer proved more reliable when traversed from the current
+        // leaf backwards. Starting at the top could stop before the newest turns
+        // because scrollHeight changes while rows are being mounted/unmounted.
+        scroller.scrollTop = scroller.scrollHeight;
+        await sleep(300);
         snapshot();
 
         let stable = 0;
-        let previousTop = -1;
+        let previousTop = Number.POSITIVE_INFINITY;
         while (stable < 2) {
           if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-          const nextTop = Math.min(
-            scroller.scrollHeight - scroller.clientHeight,
-            scroller.scrollTop + Math.max(200, scroller.clientHeight * 0.8)
+          const nextTop = Math.max(
+            0,
+            scroller.scrollTop - Math.max(200, scroller.clientHeight * 0.8)
           );
-          scroller.scrollTop = Math.max(0, nextTop);
+          scroller.scrollTop = nextTop;
           await sleep(220);
           snapshot();
+
           const currentTop = scroller.scrollTop;
-          if (Math.abs(currentTop - previousTop) < 2 || currentTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+          if (currentTop <= 2 || Math.abs(currentTop - previousTop) < 2) {
             stable++;
           } else {
             stable = 0;
@@ -192,17 +196,60 @@ export async function getGrokConversationInPage(tabId, exportId = null) {
   return result;
 }
 
+function attachmentMetadata(attachment) {
+  return {
+    bytes: null,
+    type: attachment?.mimeType || "application/octet-stream",
+    originalName: attachment?.originalName || attachment?.title || null,
+    fileId: attachment?.id || null,
+    libraryFileId: null
+  };
+}
+
 export async function downloadGrokAttachmentInPage(
   tabId,
   attachment,
   metadataOnly = false,
   exportId = null
 ) {
+  if (metadataOnly) return attachmentMetadata(attachment);
+
+  const remoteUrl = attachment?.remoteUrl;
+  if (!remoteUrl) throw new Error("Grok attachment URL is missing");
+
+  // Generated Grok files and images live on assets.grok.com. Fetch those from
+  // the extension worker itself: unlike the page world this is not blocked by
+  // the asset host's CORS policy once the narrow host permission is granted.
+  try {
+    const url = new URL(remoteUrl);
+    if (url.hostname === "assets.grok.com") {
+      const response = await fetch(remoteUrl, { credentials: "omit" });
+      if (!response.ok) throw new Error("Grok asset GET: " + response.status);
+      const blob = await response.blob();
+      const declaredType = attachment?.mimeType || "application/octet-stream";
+      const receivedType = blob.type || response.headers.get("content-type") || "";
+      const type = receivedType && receivedType !== "application/octet-stream"
+        ? receivedType
+        : declaredType;
+      const buffer = await blob.arrayBuffer();
+      return {
+        bytes: Array.from(new Uint8Array(buffer)),
+        type,
+        originalName: attachment?.originalName || attachment?.title || null,
+        fileId: attachment?.id || null,
+        libraryFileId: null
+      };
+    }
+  } catch (error) {
+    if (error instanceof TypeError) throw error;
+    throw error;
+  }
+
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
-    args: [attachment, metadataOnly, PAGE_ABORT_CONTROLLERS_KEY, exportId],
-    func: async (attachment, metadataOnly, registryKey, exportId) => {
+    args: [attachment, PAGE_ABORT_CONTROLLERS_KEY, exportId],
+    func: async (attachment, registryKey, exportId) => {
       let signal;
       if (exportId) {
         const registry = globalThis[registryKey] ||= new Map();
@@ -218,16 +265,6 @@ export async function downloadGrokAttachmentInPage(
       if (!remoteUrl) throw new Error("Grok attachment URL is missing");
       const declaredType = attachment.mimeType || "application/octet-stream";
       const originalName = attachment.originalName || attachment.title || null;
-
-      if (metadataOnly) {
-        return {
-          bytes: null,
-          type: declaredType,
-          originalName,
-          fileId: attachment.id || null,
-          libraryFileId: null
-        };
-      }
 
       const response = await fetch(remoteUrl, {
         credentials: "omit",
