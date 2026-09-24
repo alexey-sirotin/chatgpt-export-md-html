@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { normalizeGrokConversation, parseGrokCards } from "../grok-normalize.js";
+import {
+  cleanGrokMarkdown,
+  normalizeGrokConversation,
+  parseGrokCards
+} from "../grok-normalize.js";
 import { buildGrokSelectionIndex, selectGrokBranch } from "../grok-selection.js";
 
 function turn(id, role, message, cardAttachmentsJson = []) {
@@ -114,5 +118,37 @@ describe("Grok normalization", () => {
       [turn("a1", "assistant", "Answer", [citation])]
     );
     expect(normalized.messages[0].attachments).toEqual([]);
+  });
+
+  it("removes Grok-only card placeholders from visible Markdown", () => {
+    expect(cleanGrokMarkdown(
+      'Quote <grok:render card_id="c1" card_type="citation_card"></grok:render>\n\nDone'
+    )).toBe("Quote \n\nDone");
+
+    expect(cleanGrokMarkdown(
+      'File\n\n<grok-card data-id="f1" data-type="rendered_file_card"></grok-card>'
+    )).toBe("File");
+  });
+
+  it("widens an outer markdown fence when it contains a nested backtick fence", () => {
+    const cleaned = cleanGrokMarkdown([
+      "```markdown",
+      "# heading inside fence",
+      "- list",
+      "```js",
+      'console.log("nested fence")',
+      "```",
+      "```"
+    ].join("\n"));
+
+    expect(cleaned).toBe([
+      "````markdown",
+      "# heading inside fence",
+      "- list",
+      "```js",
+      'console.log("nested fence")',
+      "```",
+      "````"
+    ].join("\n"));
   });
 });
