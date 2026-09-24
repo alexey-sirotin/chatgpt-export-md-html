@@ -29,10 +29,14 @@ function inlineMarkdownToHtml(text) {
     return token;
   };
 
-  // Protect inline code and links before escaping the remaining source.
+  // Protect inline code, images and links before escaping the remaining source.
   source = source.replace(/`([^`\n]+)`/g, (_, code) =>
     stash(`<code>${escapeHtml(code)}</code>`)
   );
+  source = source.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, href) => {
+    const safeHref = escapeHtml(safeHtmlHref(href));
+    return stash(`<a href="${safeHref}"><img src="${safeHref}" alt="${escapeHtml(alt)}"></a>`);
+  });
   source = source.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) =>
     stash(`<a href="${escapeHtml(safeHtmlHref(href))}">${escapeHtml(label)}</a>`)
   );
