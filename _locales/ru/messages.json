@@ -71,7 +71,7 @@
     "message": "Получаю список сообщений…"
   },
   "openChatHint": {
-    "message": "Откройте чат на chatgpt.com и обновите страницу."
+    "message": "Откройте чат на chatgpt.com или claude.ai и обновите страницу."
   },
   "nothingSelected": {
     "message": "Ничего не выбрано. Отметьте сообщения или нажмите «Все»."
