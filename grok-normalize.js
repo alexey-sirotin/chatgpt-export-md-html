@@ -85,11 +85,62 @@ function attachmentFromCard(card) {
   return null;
 }
 
+function removeGrokCardMarkup(text) {
+  return String(text || "")
+    .replace(/<grok:render\b[^>]*>\s*<\/grok:render>/gi, "")
+    .replace(/<grok-card\b[^>]*>\s*<\/grok-card>/gi, "");
+}
+
+function protectNestedMarkdownFences(text) {
+  const lines = String(text || "").replaceAll("\r\n", "\n").split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const opening = lines[i].match(/^```\s*(?:markdown|md)\s*$/i);
+    if (!opening) continue;
+
+    let nestedOpen = -1;
+    let nestedClose = -1;
+    let outerClose = -1;
+
+    for (let j = i + 1; j < lines.length; j++) {
+      if (nestedOpen < 0) {
+        if (/^```[^`\s]+.*$/.test(lines[j])) nestedOpen = j;
+        else if (/^```\s*$/.test(lines[j])) break;
+        continue;
+      }
+
+      if (nestedClose < 0) {
+        if (/^```\s*$/.test(lines[j])) nestedClose = j;
+        continue;
+      }
+
+      if (/^```\s*$/.test(lines[j])) {
+        outerClose = j;
+        break;
+      }
+    }
+
+    if (nestedOpen >= 0 && nestedClose >= 0 && outerClose >= 0) {
+      lines[i] = lines[i].replace(/^```/, "````");
+      lines[outerClose] = "````";
+      i = outerClose;
+    }
+  }
+
+  return lines.join("\n");
+}
+
+export function cleanGrokMarkdown(text) {
+  return protectNestedMarkdownFences(removeGrokCardMarkup(text))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function normalizeGrokConversation(data, branch, omission = {}) {
   const messages = [];
 
   for (const turn of branch || []) {
-    const text = typeof turn?.message === "string" ? turn.message : "";
+    const text = cleanGrokMarkdown(typeof turn?.message === "string" ? turn.message : "");
     const attachments = parseGrokCards(turn?.cardAttachmentsJson)
       .map(attachmentFromCard)
       .filter(Boolean);
