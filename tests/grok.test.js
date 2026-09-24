@@ -7,8 +7,8 @@ import {
 } from "../grok-normalize.js";
 import { buildGrokSelectionIndex, selectGrokBranch } from "../grok-selection.js";
 
-function turn(id, role, message, cardAttachmentsJson = []) {
-  return { id, role, message, cardAttachmentsJson };
+function turn(id, role, message, cardAttachmentsJson = [], fileAttachments = []) {
+  return { id, role, message, cardAttachmentsJson, fileAttachments };
 }
 
 describe("Grok active branch", () => {
@@ -72,11 +72,12 @@ describe("Grok selection", () => {
 describe("Grok normalization", () => {
   it("parses generated images, searched images and rendered files", () => {
     const generated = JSON.stringify({
-      id: "img1",
+      id: "img-card",
       cardType: "generated_image_card",
       query: "test image",
       image_chunk: {
-        imageUrl: "users/u/generated/abc/image.jpg",
+        imageUuid: "asset-img-1",
+        imageUrl: "users/u/generated/asset-img-1/image.jpg",
         progress: 100
       }
     });
@@ -106,7 +107,7 @@ describe("Grok normalization", () => {
     const normalized = normalizeGrokConversation({
       conversationId: "conv-1",
       title: "Grok fixture"
-    }, [turn("a1", "assistant", "Visible **markdown**", [generated, searched, file])]);
+    }, [turn("a1", "assistant", "Visible **markdown**", [generated, searched, file], ["asset-img-1"])]);
 
     expect(normalized.platform).toBe("grok");
     expect(normalized.conversationUrl).toBe("https://grok.com/c/conv-1");
@@ -119,7 +120,8 @@ describe("Grok normalization", () => {
     expect(normalized.messages[0].attachments).toEqual([
       expect.objectContaining({
         source: "grok-generated-image",
-        remoteUrl: "https://assets.grok.com/users/u/generated/abc/image.jpg",
+        assetId: "asset-img-1",
+        remoteUrl: "https://assets.grok.com/users/u/generated/asset-img-1/image.jpg",
         originalName: "image.jpg",
         isImage: true
       }),
@@ -132,12 +134,58 @@ describe("Grok normalization", () => {
       }),
       expect.objectContaining({
         source: "grok-generated-file",
+        conversationId: "conv-1",
+        filePath: "/hello.c",
         remoteUrl: "https://assets.grok.com/users/u/generated/file-id/hello.c",
         originalName: "hello.c",
         size: 83,
         isImage: false
       })
     ]);
+  });
+
+  it("turns user fileAttachments into resolvable Grok assets", () => {
+    const normalized = normalizeGrokConversation(
+      { conversationId: "conv-1", title: "Grok fixture" },
+      [turn(
+        "u1",
+        "user",
+        "Move her from the beach to the water park",
+        [],
+        ["2ff43b37-bada-435b-b927-0aa79667884d"]
+      )]
+    );
+
+    expect(normalized.messages[0].attachments).toEqual([
+      expect.objectContaining({
+        source: "grok-user-asset",
+        id: "2ff43b37-bada-435b-b927-0aa79667884d",
+        assetId: "2ff43b37-bada-435b-b927-0aa79667884d",
+        conversationId: "conv-1",
+        remoteUrl: null
+      })
+    ]);
+  });
+
+  it("does not duplicate generated images also listed in fileAttachments", () => {
+    const generated = JSON.stringify({
+      id: "card-id",
+      cardType: "generated_image_card",
+      image_chunk: {
+        imageUuid: "asset-id",
+        imageUrl: "users/u/generated/asset-id/image.jpg"
+      }
+    });
+
+    const normalized = normalizeGrokConversation(
+      { conversationId: "conv-1" },
+      [turn("a1", "assistant", "", [generated], ["asset-id"])]
+    );
+
+    expect(normalized.messages[0].attachments).toHaveLength(1);
+    expect(normalized.messages[0].attachments[0]).toEqual(
+      expect.objectContaining({ source: "grok-generated-image", assetId: "asset-id" })
+    );
   });
 
   it("ignores citation cards instead of turning source icons into images", () => {
