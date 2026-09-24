@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+import { normalizeGrokConversation, parseGrokCards } from "../grok-normalize.js";
+import { buildGrokSelectionIndex, selectGrokBranch } from "../grok-selection.js";
+
+function turn(id, role, message, cardAttachmentsJson = []) {
+  return { id, role, message, cardAttachmentsJson };
+}
+
+describe("Grok selection", () => {
+  const data = {
+    turns: [
+      turn("u1", "user", "one"),
+      turn("a1", "assistant", "two"),
+      turn("u2", "user", "three"),
+      turn("a2", "assistant", "four")
+    ]
+  };
+
+  it("builds stable message and positional ids", () => {
+    const index = buildGrokSelectionIndex(data);
+    expect(index.groups[2].directIds).toEqual(["u2", "grok-index:2"]);
+  });
+
+  it("keeps chosen turns in conversation order and marks omissions", () => {
+    const selected = selectGrokBranch(data, {
+      selectAll: false,
+      selectedMessageIds: ["a1", "a2"]
+    });
+    expect(selected.branch.map(item => item.id)).toEqual(["a1", "a2"]);
+    expect(selected.omission.omittedAtStart).toBe(true);
+    expect(selected.omission.beforeIds.has("a2")).toBe(true);
+  });
+});
+
+describe("Grok normalization", () => {
+  it("parses generated images, searched images and rendered files", () => {
+    const generated = JSON.stringify({
+      id: "img1",
+      cardType: "generated_image_card",
+      query: "test image",
+      image_chunk: {
+        imageUrl: "users/u/generated/abc/image.jpg",
+        progress: 100
+      }
+    });
+    const searched = JSON.stringify({
+      id: "img2",
+      cardType: "image_card",
+      image: {
+        original: "https://example.com/full.png",
+        thumbnail: "https://example.com/thumb.png",
+        title: "Example",
+        source: "Example source",
+        link: "https://example.com/page"
+      }
+    });
+    const file = JSON.stringify({
+      id: "file1",
+      type: "render_file",
+      cardType: "rendered_file_card",
+      file_name: "hello.c",
+      mime_type: "application/octet-stream",
+      file_size: 83,
+      url: "users/u/generated/file-id/hello.c"
+    });
+
+    expect(parseGrokCards([generated, searched, file])).toHaveLength(3);
+
+    const normalized = normalizeGrokConversation({
+      conversationId: "conv-1",
+      title: "Grok fixture"
+    }, [turn("a1", "assistant", "Visible **markdown**", [generated, searched, file])]);
+
+    expect(normalized.platform).toBe("grok");
+    expect(normalized.conversationUrl).toBe("https://grok.com/c/conv-1");
+    expect(normalized.messages).toHaveLength(1);
+    expect(normalized.messages[0].content[0]).toEqual({
+      type: "text",
+      text: "Visible **markdown**",
+      format: "markdown"
+    });
+    expect(normalized.messages[0].attachments).toEqual([
+      expect.objectContaining({
+        source: "grok-generated-image",
+        remoteUrl: "https://assets.grok.com/users/u/generated/abc/image.jpg",
+        originalName: "image.jpg",
+        isImage: true
+      }),
+      expect.objectContaining({
+        source: "grok-search-image",
+        remoteUrl: "https://example.com/full.png",
+        sourceUrl: "https://example.com/page",
+        originalName: "full.png",
+        isImage: true
+      }),
+      expect.objectContaining({
+        source: "grok-generated-file",
+        remoteUrl: "https://assets.grok.com/users/u/generated/file-id/hello.c",
+        originalName: "hello.c",
+        size: 83,
+        isImage: false
+      })
+    ]);
+  });
+
+  it("ignores citation cards instead of turning source icons into images", () => {
+    const citation = JSON.stringify({
+      id: "c1",
+      cardType: "citation_card",
+      url: "https://example.com/source"
+    });
+    const normalized = normalizeGrokConversation(
+      { conversationId: "conv-1" },
+      [turn("a1", "assistant", "Answer", [citation])]
+    );
+    expect(normalized.messages[0].attachments).toEqual([]);
+  });
+});
