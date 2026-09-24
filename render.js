@@ -179,6 +179,7 @@ function markdownToHtml(markdown) {
   let quote = [];
   let inFence = false;
   let fenceLang = "";
+  let fenceLength = 0;
   let codeLines = [];
 
   const flushParagraph = () => {
@@ -194,22 +195,29 @@ function markdownToHtml(markdown) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const fence = line.match(/^```\s*([^\s`]*)?.*$/);
+    const fence = line.match(/^(`{3,})\s*([^\s`]*)?.*$/);
     if (fence) {
+      const markerLength = fence[1].length;
       if (!inFence) {
         flushParagraph();
         flushQuote();
         inFence = true;
-        fenceLang = fence[1] || "";
+        fenceLength = markerLength;
+        fenceLang = fence[2] || "";
         codeLines = [];
-      } else {
+        continue;
+      }
+
+      const isClosingFence = markerLength >= fenceLength && /^`{3,}\s*$/.test(line);
+      if (isClosingFence) {
         const cls = fenceLang ? ` class="language-${escapeHtml(fenceLang)}"` : "";
         out.push(`<pre><code${cls}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
         inFence = false;
         fenceLang = "";
+        fenceLength = 0;
         codeLines = [];
+        continue;
       }
-      continue;
     }
 
     if (inFence) {
@@ -348,6 +356,10 @@ function remoteImageFallbackHtml(attachment) {
   return `<figure><a href="${target}"><img src="${src}" alt="${label}"></a></figure>`;
 }
 
+function shouldUseRemoteImageFallback(attachment) {
+  return isImageAttachment(attachment) && !!attachment?.remoteUrl && !attachment?.localAvailable;
+}
+
 export function buildMarkdownExport({ title, conversationUrl, messages, includeOriginalLink = true }) {
   const md = [`# ${title}`, ""];
   if (includeOriginalLink && conversationUrl) {
@@ -371,7 +383,7 @@ export function buildMarkdownExport({ title, conversationUrl, messages, includeO
     if (texts.length) md.push(texts.join("\n\n"), "");
 
     for (const a of attachments) {
-      if (a.source === "claude-remote-image" && !a.localAvailable) {
+      if (shouldUseRemoteImageFallback(a)) {
         const fallback = remoteImageFallbackMarkdown(a);
         if (fallback) md.push(fallback, "");
         continue;
@@ -413,7 +425,7 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
       .join("\n");
 
     const attachments = (message.attachments || []).map(a => {
-      if (a.source === "claude-remote-image" && !a.localAvailable) {
+      if (shouldUseRemoteImageFallback(a)) {
         return remoteImageFallbackHtml(a);
       }
       if (a.error) {
