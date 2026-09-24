@@ -47,7 +47,7 @@ function attachmentFromCard(card, conversationId) {
       sourceUrl: null,
       originalName: fileNameFromUrl(remoteUrl, "image.jpg"),
       title: card.query || card?.image_chunk?.imageTitle || "Generated image",
-      mimeType: card?.image_chunk?.mimeType || "image/jpeg",
+      mimeType: card?.image_chunk?.mimeType || card?.image_chunk?.mime_type || "image/jpeg",
       isImage: true
     };
   }
@@ -163,6 +163,49 @@ function removeGrokCardMarkup(text) {
     .replace(/<grok-card\b[^>]*>[\s\S]*?<\/grok-card>/gi, "");
 }
 
+function assistantResponseText(chunk) {
+  const text = chunk?.text;
+  if (!text || typeof text.text !== "string") return null;
+  if (text.channel && text.channel !== "CHANNEL_ASSISTANT_RESPONSE") return null;
+  return text.text;
+}
+
+function chunkCardId(chunk) {
+  return chunk?.render_searched_image?.id ||
+    chunk?.render_file?.id ||
+    chunk?.render_start?.id ||
+    null;
+}
+
+export function reconstructGrokHistoryMarkdown(outputChunks = [], attachments = []) {
+  if (!Array.isArray(outputChunks) || !outputChunks.length) return null;
+
+  const byId = new Map(
+    (attachments || [])
+      .filter(attachment => attachment?.id)
+      .map(attachment => [String(attachment.id), attachment])
+  );
+  const parts = [];
+  let sawResponseText = false;
+
+  for (const chunk of outputChunks) {
+    const text = assistantResponseText(chunk);
+    if (text != null) {
+      sawResponseText = true;
+      parts.push(text);
+      continue;
+    }
+
+    const id = chunkCardId(chunk);
+    if (!id) continue;
+    const reference = attachmentReference(byId.get(String(id)));
+    if (reference) parts.push(reference);
+  }
+
+  if (!sawResponseText) return null;
+  return parts.join("");
+}
+
 function protectNestedMarkdownFences(text) {
   const lines = String(text || "").replaceAll("\r\n", "\n").split("\n");
 
@@ -219,7 +262,9 @@ export function normalizeGrokConversation(data, branch, omission = {}) {
       ...cardAttachments,
       ...userAssetAttachments(turn?.fileAttachments, cardAttachments, data?.conversationId)
     ];
-    const withReferences = replaceGrokCardPlaceholders(
+
+    const historyMarkdown = reconstructGrokHistoryMarkdown(turn?.outputChunks, cardAttachments);
+    const withReferences = historyMarkdown ?? replaceGrokCardPlaceholders(
       typeof turn?.message === "string" ? turn.message : "",
       cardAttachments
     );
