@@ -9,6 +9,7 @@
   let refreshQueued = false;
   let orderedIds = [];
   let collecting = null;
+  let orderDirty = true;
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -118,6 +119,8 @@
     refreshQueued = true;
     requestAnimationFrame(() => {
       refreshQueued = false;
+      const mounted = turnItems().map(item => item.id);
+      if (orderedIds.length && mounted.some(id => !orderedIds.includes(id))) orderDirty = true;
       refreshMounted();
     });
   }
@@ -134,11 +137,14 @@
   }
 
   async function collectOrderedIds() {
+    if (orderedIds.length && !orderDirty) return orderedIds;
     if (collecting) return collecting;
+
     collecting = (async () => {
       const scroller = document.querySelector('[data-testid="chat-transcript-scroller"]');
       if (!scroller) {
         orderedIds = turnItems().map(item => item.id);
+        orderDirty = false;
         return orderedIds;
       }
 
@@ -154,22 +160,22 @@
         }
       };
 
-      scroller.scrollTop = 0;
-      await sleep(250);
+      scroller.scrollTop = scroller.scrollHeight;
+      await sleep(300);
       snapshot();
 
       let stable = 0;
-      let previousTop = -1;
+      let previousTop = Number.POSITIVE_INFINITY;
       while (stable < 2) {
-        const nextTop = Math.min(
-          scroller.scrollHeight - scroller.clientHeight,
-          scroller.scrollTop + Math.max(200, scroller.clientHeight * 0.8)
+        const nextTop = Math.max(
+          0,
+          scroller.scrollTop - Math.max(200, scroller.clientHeight * 0.8)
         );
-        scroller.scrollTop = Math.max(0, nextTop);
+        scroller.scrollTop = nextTop;
         await sleep(220);
         snapshot();
         const currentTop = scroller.scrollTop;
-        if (Math.abs(currentTop - previousTop) < 2 || currentTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+        if (currentTop <= 2 || Math.abs(currentTop - previousTop) < 2) {
           stable++;
         } else {
           stable = 0;
@@ -182,6 +188,7 @@
       orderedIds = [...positions.entries()]
         .sort((a, b) => a[1] - b[1])
         .map(([id]) => id);
+      orderDirty = false;
       refreshMounted();
       return orderedIds;
     })().finally(() => {
@@ -208,17 +215,12 @@
 
   chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (msg.type === "GET_INFO") {
-      collectOrderedIds().then(() => {
-        refreshMounted();
-        respond({
-          title: document.title.replace(/\s*[|–-]\s*Grok.*$/i, ""),
-          ...currentState()
-        });
-      }).catch(() => respond({
+      refreshMounted();
+      respond({
         title: document.title.replace(/\s*[|–-]\s*Grok.*$/i, ""),
         ...currentState()
-      }));
-      return true;
+      });
+      return;
     }
 
     if (msg.type === "TOGGLE_SELECTION_UI") {
@@ -252,7 +254,7 @@
     }
 
     if (msg.type === "GET_SELECTION") {
-      collectOrderedIds().then(() => respond({
+      respond({
         selectAll: selectAllMode,
         selectedTurnIds: [],
         selectedMessageIds: [...selectedMessageIds],
@@ -260,8 +262,8 @@
         excludedMessageIds: [...excludedMessageIds],
         legacyTurnContexts: [],
         orderedIds: [...orderedIds]
-      }));
-      return true;
+      });
+      return;
     }
 
     if (msg.type === "RESET_AFTER_EXPORT") {
