@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "https://grok.com/*"
   ],
   "icons": {
     "16": "icons/icon-16.png",
@@ -54,6 +55,15 @@
       ],
       "js": [
         "claude-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://grok.com/*"
+      ],
+      "js": [
+        "grok-content.js"
       ],
       "run_at": "document_idle"
     }
