@@ -260,6 +260,8 @@
       zIndex: '2147483647',
       cursor: 'pointer',
       accentColor: '#7c3aed',
+      appearance: 'auto',
+      WebkitAppearance: 'checkbox',
       opacity: '1',
       visibility: 'visible',
       pointerEvents: 'auto'
