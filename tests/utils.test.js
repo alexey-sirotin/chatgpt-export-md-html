@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  extFromMime,
   filenameWithExtension,
   markdownHref,
   safeAttachmentName,
@@ -31,5 +32,10 @@ describe("attachment filenames and paths", () => {
     )).toBe(
       "%D0%AD%D0%BA%D1%81%D0%BF%D0%BE%D1%80%D1%82/%D0%AD%D1%84%D0%B8%D1%80%D0%BD%D1%8B%D0%B9%20%D1%81%D0%B8%D0%BB%D1%83%D1%8D%D1%82.png"
     );
+  });
+
+  it("maps SVG MIME types to .svg, including MIME parameters", () => {
+    expect(extFromMime("image/svg+xml", "Placeholder")).toBe("svg");
+    expect(extFromMime("image/svg+xml; charset=utf-8", "Placeholder")).toBe("svg");
   });
 });
