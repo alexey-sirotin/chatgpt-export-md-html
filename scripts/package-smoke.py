@@ -32,6 +32,7 @@ COMMON_ROOT_FILES = {
     "dom-selection.js",
     "download-url.js",
     "manifest.json",
+    "math-render.js",
     "ordered-selection.js",
     "popup.html",
     "platform.js",
@@ -42,6 +43,8 @@ COMMON_ROOT_FILES = {
     "selection-index.js",
     "selection-matcher.js",
     "utils.js",
+    "vendor/KATEX-LICENSE.txt",
+    "vendor/katex.mjs",
     "zip.js",
 }
 

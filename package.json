@@ -3,11 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/prepare-katex.mjs",
     "test": "vitest run",
     "test:package": "python3 scripts/package-smoke.py"
   },
   "devDependencies": {
     "jsdom": "^27.0.0",
+    "katex": "0.18.9",
     "vitest": "4.1.11"
   },
   "engines": {
