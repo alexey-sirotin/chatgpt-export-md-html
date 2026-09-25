@@ -82,6 +82,7 @@
 
   function domMessageId(node) {
     const candidates = [
+      node?.getAttribute?.("data-virtual-list-item-key"),
       node?.getAttribute?.("data-message-id"),
       node?.getAttribute?.("data-msg-id"),
       String(node?.id || "").match(/(?:message|msg)[-_](\d+)$/i)?.[1]
@@ -93,7 +94,9 @@
   }
 
   function turnItems() {
-    const nodes = document.querySelectorAll('[data-message-id], [data-msg-id], [id^="message-"], [id^="msg-"]');
+    const nodes = document.querySelectorAll(
+      '[data-virtual-list-item-key], [data-message-id], [data-msg-id], [id^="message-"], [id^="msg-"]'
+    );
     const seen = new Set();
     const out = [];
     for (const turn of nodes) {
@@ -174,7 +177,17 @@
         refreshMounted();
       });
     });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        "data-virtual-list-item-key",
+        "data-message-id",
+        "data-msg-id",
+        "id"
+      ]
+    });
   }
 
   function currentState() {
