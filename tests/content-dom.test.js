@@ -17,7 +17,39 @@ function stableTurn(turnId, messageId, {
   `;
 }
 
+function modernExchange(userId, assistantId) {
+  return `
+    <div data-turn-key="${userId}">
+      <div data-user-message-bubble>question</div>
+      <span data-chatgpt-agent-turn-start></span>
+      <h4 data-conversation-role="assistant">assistant</h4>
+      <div data-chatgpt-selection-message-id="${assistantId}">answer</div>
+    </div>
+  `;
+}
+
 describe("content-script DOM selection behavior", () => {
+  it("supports the current ChatGPT exchange DOM with separate user and assistant selection", () => {
+    const { dispatch } = loadBrowserScript("content.js", {
+      html: modernExchange("user-message-1", "assistant-message-1")
+    });
+
+    const state = dispatch({ type: "TOGGLE_SELECTION_UI" });
+
+    expect(state).toMatchObject({ total: 2, selected: 2, enabled: true });
+    expect(document.querySelectorAll(".chatgpt-export-select")).toHaveLength(2);
+    expect(dispatch({ type: "GET_SELECTION" }).orderedIds)
+      .toEqual(["user-message-1", "assistant-message-1"]);
+
+    const firstBox = document.querySelector(".chatgpt-export-select");
+    expect(firstBox.style.appearance).toBe("auto");
+
+    document.querySelector("[data-user-message-bubble] .chatgpt-export-select").click();
+    const selection = dispatch({ type: "GET_SELECTION" });
+    expect(selection.excludedTurnIds).toContain("user-message-1");
+    expect(selection.excludedMessageIds).toContain("user-message-1");
+  });
+
   it("uses the final message id for a request-* container once it is available", () => {
     const { dispatch } = loadBrowserScript("content.js", {
       html: `

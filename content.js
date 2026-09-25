@@ -30,9 +30,9 @@
       return { turnId: sourceTurnId, sourceTurnId };
     }
 
-    // Fresh assistant replies in ChatGPT's live SPA use a temporary
+    // Fresh assistant replies in ChatGPT's older SPA markup used a temporary
     // data-turn-id-container/data-turn-id such as "request-...", while the
-    // rendered message already has its final UUID in data-message-id. Treat that
+    // rendered message already had its final UUID in data-message-id. Treat that
     // real message ID as the selection identity. Empty request placeholders have
     // no data-message-id and remain ignored.
     if (isTemporaryId(sourceTurnId)) {
@@ -43,7 +43,48 @@
     return null;
   }
 
+  function modernTurnContainers() {
+    const out = [];
+
+    // Current ChatGPT markup groups one user/assistant exchange under a single
+    // data-turn-key element. The turn key is the stable user message UUID, while
+    // data-chatgpt-selection-message-id is the stable assistant message UUID.
+    // Keep them as two independently selectable logical messages.
+    for (const exchange of document.querySelectorAll('[data-turn-key]')) {
+      const userId = exchange.getAttribute('data-turn-key');
+      const userRoot = exchange.querySelector('[data-user-message-bubble]');
+      if (validTurnId(userId) && userRoot) {
+        out.push({
+          el: userRoot,
+          turnId: userId,
+          sourceTurnId: userId,
+          root: userRoot,
+          messageId: userId,
+          modern: true
+        });
+      }
+
+      const assistantRoot = exchange.querySelector('[data-chatgpt-selection-message-id]');
+      const assistantId = assistantRoot?.getAttribute('data-chatgpt-selection-message-id') || null;
+      if (validTurnId(assistantId) && assistantRoot) {
+        out.push({
+          el: assistantRoot,
+          turnId: assistantId,
+          sourceTurnId: assistantId,
+          root: assistantRoot,
+          messageId: assistantId,
+          modern: true
+        });
+      }
+    }
+
+    return out;
+  }
+
   function allTurnContainers() {
+    const modern = modernTurnContainers();
+    if (modern.length) return modern;
+
     const out = [];
     for (const el of document.querySelectorAll('[data-turn-id-container]')) {
       const identity = containerSelectionIdentity(el);
@@ -59,40 +100,49 @@
   function populatedTurns() {
     const out = [];
     const seen = new Set();
+    const modernMode = document.querySelector('[data-turn-key]') != null;
 
     for (const item of allTurnContainers()) {
       const { el: container, turnId, sourceTurnId } = item;
       if (!turnId || seen.has(turnId)) continue;
 
       // Older/stable ChatGPT markup exposes section[data-turn-id][data-turn].
-      // Fresh assistant replies can use a temporary request-* turn ID even
-      // though data-message-id already contains the final UUID. Match the DOM
-      // root by its source turn ID, while using the final message UUID as our
-      // selection identity.
-      const root = matchingTurnRoot(container, sourceTurnId) ||
+      // Current markup gives modern entries an explicit root above, so no
+      // legacy root reconstruction is needed for them.
+      const root = item.root ||
+        matchingTurnRoot(container, sourceTurnId) ||
         mountedFallbackRoot(container);
       if (!root) continue; // genuine virtualized placeholder
 
       const messageEl = selfOrDescendantWithMessageId(root) || selfOrDescendantWithMessageId(container);
-      const messageId = messageEl?.getAttribute('data-message-id') || null;
-      out.push({ turnId, sourceTurnId, root, container, messageId });
+      const messageId = item.messageId || messageEl?.getAttribute('data-message-id') || null;
+      out.push({
+        turnId,
+        sourceTurnId,
+        root,
+        container,
+        messageId,
+        modern: !!item.modern
+      });
       seen.add(turnId);
     }
 
-    // Defensive fallback for a future DOM variant where a mounted turn is no
-    // longer nested inside data-turn-id-container. Do not require
-    // data-message-id here either: image-only generated replies may not have it.
-    for (const section of document.querySelectorAll('[data-turn-id]')) {
-      const turnId = section.getAttribute('data-turn-id');
-      if (!validTurnId(turnId) || seen.has(turnId)) continue;
-      const messageEl = selfOrDescendantWithMessageId(section);
-      out.push({
-        turnId,
-        root: section,
-        container: section,
-        messageId: messageEl?.getAttribute('data-message-id') || null
-      });
-      seen.add(turnId);
+    // Defensive fallback for the legacy DOM variant where a mounted turn is no
+    // longer nested inside data-turn-id-container. Do not mix it with the new
+    // exchange-based DOM, where data-turn-key is authoritative.
+    if (!modernMode) {
+      for (const section of document.querySelectorAll('[data-turn-id]')) {
+        const turnId = section.getAttribute('data-turn-id');
+        if (!validTurnId(turnId) || seen.has(turnId)) continue;
+        const messageEl = selfOrDescendantWithMessageId(section);
+        out.push({
+          turnId,
+          root: section,
+          container: section,
+          messageId: messageEl?.getAttribute('data-message-id') || null
+        });
+        seen.add(turnId);
+      }
     }
 
     // Keep a conservative fallback context for legacy image-only turns that
@@ -141,6 +191,8 @@
   }
 
   function checkboxHost(turn) {
+    if (turn.modern) return turn.root;
+
     return turn.root.querySelector?.('[data-conversation-screenshot-content]') ||
       turn.container.querySelector?.('[data-conversation-screenshot-content]') ||
       turn.container.querySelector?.('[data-message-author-role]') ||
@@ -208,6 +260,8 @@
       zIndex: '2147483647',
       cursor: 'pointer',
       accentColor: '#7c3aed',
+      appearance: 'auto',
+      WebkitAppearance: 'checkbox',
       opacity: '1',
       visibility: 'visible',
       pointerEvents: 'auto'
@@ -281,15 +335,23 @@
     if (observer) return;
     observer = new MutationObserver(scheduleRefresh);
 
-    // Observe body instead of the current #thread. ChatGPT is an SPA and can
-    // replace the thread node while keeping the page alive. Attribute changes
-    // are included because freshly appended turns may receive IDs during a
-    // later hydration step.
+    // Observe body instead of the current thread. ChatGPT is an SPA and can
+    // replace the conversation node while keeping the page alive. Attribute
+    // changes are included because freshly appended turns may receive IDs during
+    // a later hydration step.
     observer.observe(document.body, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-turn-id-container', 'data-turn-id', 'data-turn', 'data-message-id']
+      attributeFilter: [
+        'data-turn-id-container',
+        'data-turn-id',
+        'data-turn',
+        'data-message-id',
+        'data-turn-key',
+        'data-user-message-bubble',
+        'data-chatgpt-selection-message-id'
+      ]
     });
   }
 
