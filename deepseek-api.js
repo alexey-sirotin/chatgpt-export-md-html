@@ -84,11 +84,12 @@ export async function getDeepSeekConversationInPage(tabId, exportId = null) {
         throw new Error("DeepSeek history API: " + (payload?.msg || payload?.code || "unknown error"));
       }
 
-      const biz = payload?.data?.biz_data;
-      if (biz?.biz_code !== 0) {
-        throw new Error("DeepSeek history business API: " + (biz?.biz_msg || biz?.biz_code || "unknown error"));
+      const envelope = payload?.data;
+      if (envelope?.biz_code !== 0) {
+        throw new Error("DeepSeek history business API: " + (envelope?.biz_msg || envelope?.biz_code || "unknown error"));
       }
 
+      const biz = envelope?.biz_data;
       const session = biz?.chat_session || null;
       const messages = Array.isArray(biz?.chat_messages) ? biz.chat_messages : [];
       if (!session || session.current_message_id == null) throw new Error(noActiveConversation);
