@@ -32,6 +32,7 @@ COMMON_ROOT_FILES = {
     "dom-selection.js",
     "download-url.js",
     "manifest.json",
+    "math-render.js",
     "ordered-selection.js",
     "popup.html",
     "platform.js",
