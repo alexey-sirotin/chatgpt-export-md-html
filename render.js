@@ -1,4 +1,5 @@
 import { t, markdownHref, markdownLabel, attachmentDisplayName } from "./utils.js";
+import { replaceInlineMath, renderDisplayMathBlock } from "./math-render.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -29,10 +30,11 @@ function inlineMarkdownToHtml(text) {
     return token;
   };
 
-  // Protect inline code, images and links before escaping the remaining source.
+  // Protect inline code, math, images and links before escaping the remaining source.
   source = source.replace(/`([^`\n]+)`/g, (_, code) =>
     stash(`<code>${escapeHtml(code)}</code>`)
   );
+  source = replaceInlineMath(source, stash);
   source = source.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, href) => {
     const safeHref = escapeHtml(safeHtmlHref(href));
     return stash(`<a href="${safeHref}"><img src="${safeHref}" alt="${escapeHtml(alt)}"></a>`);
@@ -226,6 +228,15 @@ function markdownToHtml(markdown) {
 
     if (inFence) {
       codeLines.push(line);
+      continue;
+    }
+
+    const mathBlock = renderDisplayMathBlock(lines, i);
+    if (mathBlock) {
+      flushParagraph();
+      flushQuote();
+      out.push(mathBlock.html);
+      i = mathBlock.nextLine - 1;
       continue;
     }
 
@@ -547,6 +558,11 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
   code { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 0.92em; }
   :not(pre) > code { padding: 0.08em 0.3em; border-radius: 4px; background: color-mix(in srgb, CanvasText 8%, Canvas); }
   a { color: LinkText; }
+  .math-inline { white-space: nowrap; }
+  .math-block { margin: 1em 0; overflow-x: auto; overflow-y: hidden; text-align: center; }
+  .math-block .katex-display { display: block; }
+  .math-fallback { margin: 1em 0; overflow-x: auto; }
+  .math-fallback code { white-space: nowrap; }
   .table-wrap { margin: 0.9em 0; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
   th, td { padding: 0.45em 0.7em; text-align: left; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent); }
@@ -565,7 +581,7 @@ export function buildHtmlExport({ title, conversationUrl, messages, includeOrigi
     .message { break-inside: auto; border-color: #bbb; background: white !important; }
     .table-wrap { overflow: visible; }
     thead { display: table-header-group; }
-    figure, pre { break-inside: avoid; }
+    figure, pre, .math-block { break-inside: avoid; }
     a { color: inherit; text-decoration: underline; }
   }
 </style>
