@@ -41,6 +41,10 @@ describe("content-script DOM selection behavior", () => {
     expect(dispatch({ type: "GET_SELECTION" }).orderedIds)
       .toEqual(["user-message-1", "assistant-message-1"]);
 
+    const firstBox = document.querySelector(".chatgpt-export-select");
+    expect(firstBox.style.appearance).toBe("auto");
+    expect(firstBox.style.webkitAppearance).toBe("checkbox");
+
     document.querySelector("[data-user-message-bubble] .chatgpt-export-select").click();
     const selection = dispatch({ type: "GET_SELECTION" });
     expect(selection.excludedTurnIds).toContain("user-message-1");
