@@ -65,11 +65,27 @@ export function localTime(seconds) {
 export function extFromMime(mime, fallbackName="") {
   const byName = fallbackName.match(/\.([a-zA-Z0-9]{2,5})$/)?.[1];
   if (byName) return byName.toLowerCase();
+
+  const normalizedMime = String(mime || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
   const map = {
-    "image/png":"png","image/jpeg":"jpg","image/webp":"webp","image/gif":"gif",
-    "application/pdf":"pdf","text/plain":"txt"
+    "image/avif":"avif",
+    "image/bmp":"bmp",
+    "image/gif":"gif",
+    "image/heic":"heic",
+    "image/heif":"heif",
+    "image/jpeg":"jpg",
+    "image/png":"png",
+    "image/svg+xml":"svg",
+    "image/tiff":"tiff",
+    "image/webp":"webp",
+    "image/x-icon":"ico",
+    "application/pdf":"pdf",
+    "text/plain":"txt"
   };
-  return map[mime] || "bin";
+  return map[normalizedMime] || "bin";
 }
 
 // Minimal ZIP writer (store/no compression), enough for MVP.

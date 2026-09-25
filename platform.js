@@ -31,6 +31,17 @@ import {
   buildGrokSelectionIndex,
   selectGrokBranch
 } from "./grok-selection.js";
+import {
+  getDeepSeekConversationInPage,
+  downloadDeepSeekAttachmentInPage,
+  abortDeepSeekExportInPage,
+  clearDeepSeekExportAbortInPage
+} from "./deepseek-api.js";
+import { normalizeDeepSeekConversation } from "./deepseek-normalize.js";
+import {
+  buildDeepSeekSelectionIndex,
+  selectDeepSeekBranch
+} from "./deepseek-selection.js";
 
 export const chatgptPlatform = {
   id: "chatgpt",
@@ -137,7 +148,42 @@ export const grokPlatform = {
   normalizeConversation: normalizeGrokConversation
 };
 
-const platforms = [chatgptPlatform, claudePlatform, grokPlatform];
+export const deepseekPlatform = {
+  id: "deepseek",
+
+  matchesUrl(url) {
+    try {
+      return new URL(url).hostname === "chat.deepseek.com";
+    } catch {
+      return false;
+    }
+  },
+
+  conversationIdFromUrl(url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname !== "chat.deepseek.com") return "";
+      const match = parsed.pathname.match(/\/a\/chat\/s\/([^/?#]+)/i);
+      return match ? decodeURIComponent(match[1]) : "";
+    } catch {
+      return "";
+    }
+  },
+
+  conversationId(data) {
+    return data?.conversationId || "";
+  },
+
+  getConversationInPage: getDeepSeekConversationInPage,
+  buildSelectionIndex: buildDeepSeekSelectionIndex,
+  selectBranch: selectDeepSeekBranch,
+  downloadAttachmentInPage: downloadDeepSeekAttachmentInPage,
+  abortExportInPage: abortDeepSeekExportInPage,
+  clearExportAbortInPage: clearDeepSeekExportAbortInPage,
+  normalizeConversation: normalizeDeepSeekConversation
+};
+
+const platforms = [chatgptPlatform, claudePlatform, grokPlatform, deepseekPlatform];
 
 export function platformForUrl(url) {
   return platforms.find(platform => platform.matchesUrl(url)) || null;
