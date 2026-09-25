@@ -40,7 +40,7 @@ describe("DeepSeek active branch", () => {
 });
 
 describe("DeepSeek normalization", () => {
-  it("preserves THINK before RESPONSE as readable markdown", () => {
+  it("exports THINK and RESPONSE as separate assistant messages", () => {
     const data = { conversationId: "abc", title: "Test" };
     const branch = [{
       id: "2",
@@ -56,11 +56,74 @@ describe("DeepSeek normalization", () => {
 
     const normalized = normalizeDeepSeekConversation(data, branch);
     expect(normalized.platform).toBe("deepseek");
+    expect(normalized.messages).toHaveLength(2);
+    expect(normalized.messages[0]).toMatchObject({
+      id: "2:think",
+      role: "assistant",
+      sourceRole: "assistant-thinking"
+    });
     expect(normalized.messages[0].content.map(part => part.text)).toEqual([
-      "#### Thinking (8.3 s)\n\nReasoning text",
+      "#### Thinking (8.3 s)\n\nReasoning text"
+    ]);
+    expect(normalized.messages[1]).toMatchObject({
+      id: "2",
+      role: "assistant",
+      sourceRole: "assistant"
+    });
+    expect(normalized.messages[1].content.map(part => part.text)).toEqual([
       "# Final answer"
     ]);
     expect(normalized.messages[0].createdAt).toBe("2026-09-24T22:30:42.472Z");
+    expect(normalized.messages[1].createdAt).toBe("2026-09-24T22:30:42.472Z");
+  });
+
+  it("localizes external images found inside THINK fragments", () => {
+    const normalized = normalizeDeepSeekConversation(
+      { conversationId: "abc", title: "Test" },
+      [{
+        id: "8",
+        parentId: "7",
+        role: "assistant",
+        insertedAt: 1790289042.472,
+        fragments: [
+          {
+            type: "THINK",
+            content: "Inspect ![Placeholder](https://placehold.co/120x80.svg)",
+            elapsed_secs: 2
+          },
+          { type: "RESPONSE", content: "Done" }
+        ]
+      }]
+    );
+
+    const thinking = normalized.messages[0];
+    expect(thinking.id).toBe("8:think");
+    expect(thinking.attachments).toHaveLength(1);
+    expect(thinking.attachments[0]).toMatchObject({
+      source: "deepseek-remote-image",
+      remoteUrl: "https://placehold.co/120x80.svg",
+      isImage: true
+    });
+    expect(thinking.content[0].text).toContain("attachment://deepseek-remote-image%3A8%3Athink%3A1%3A1");
+  });
+
+  it("applies an omission marker only to the first exported part of a DeepSeek turn", () => {
+    const normalized = normalizeDeepSeekConversation(
+      { conversationId: "abc", title: "Test" },
+      [{
+        id: "8",
+        parentId: "7",
+        role: "assistant",
+        fragments: [
+          { type: "THINK", content: "Reasoning" },
+          { type: "RESPONSE", content: "Final" }
+        ]
+      }],
+      { beforeIds: new Set(["8"]) }
+    );
+
+    expect(normalized.messages[0].omittedBefore).toBe(true);
+    expect(normalized.messages[1].omittedBefore).toBeUndefined();
   });
 
   it("normalizes uploaded files and image previews", () => {
