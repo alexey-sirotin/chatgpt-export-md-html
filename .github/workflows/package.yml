@@ -27,23 +27,8 @@ jobs:
       - name: Install test dependencies
         run: npm install --no-package-lock --no-audit --no-fund
 
-      - name: Vendor KaTeX runtime into branch
-        if: github.event_name == 'pull_request' && github.head_ref == 'add-katex-rendering'
-        shell: bash
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          git fetch origin "$HEAD_REF"
-          git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
-          git add -f vendor/katex.mjs vendor/KATEX-LICENSE.txt
-          if git diff --cached --quiet; then
-            echo "KaTeX runtime is already vendored."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: vendor KaTeX runtime"
-          git push origin "HEAD:$HEAD_REF"
+      - name: Verify vendored KaTeX runtime
+        run: git diff --exit-code -- vendor/katex.mjs vendor/KATEX-LICENSE.txt
 
       - name: Run unit tests
         run: npm test
