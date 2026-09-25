@@ -1,4 +1,5 @@
 import { SELECTION_INDEX_SCHEMA_VERSION } from "./selection-index.js";
+import { chosenSelectionGroupIndexes } from "./selection-matcher.js";
 
 function positionalId(prefix, index) {
   return `${prefix}-index:${index}`;
@@ -31,18 +32,25 @@ export function buildOrderedSelectionIndex(items, options) {
 
 export function selectOrderedBranch(items, selection = {}, options) {
   const ordered = Array.isArray(items) ? items : [];
-  const selectedIds = new Set((selection.selectedMessageIds || []).map(String));
-  const excludedIds = new Set((selection.excludedMessageIds || []).map(String));
-  const chosenPositions = [];
+  const selectionIndex = buildOrderedSelectionIndex(ordered, options);
+  let chosen;
 
-  for (let index = 0; index < ordered.length; index++) {
-    const ids = directIdsFor(ordered[index], index, options);
-    const included = selection.selectAll
-      ? !ids.some(id => excludedIds.has(id))
-      : ids.some(id => selectedIds.has(id));
-    if (included) chosenPositions.push(index);
+  if (selection.selectAll) {
+    const excluded = chosenSelectionGroupIndexes(selectionIndex.groups, {
+      selectedMessageIds: selection.excludedMessageIds || [],
+      selectedTurnIds: selection.excludedTurnIds || [],
+      legacyTurnContexts: selection.legacyTurnContexts || []
+    });
+    chosen = new Set(
+      selectionIndex.groups
+        .map((_, index) => index)
+        .filter(index => !excluded.has(index))
+    );
+  } else {
+    chosen = chosenSelectionGroupIndexes(selectionIndex.groups, selection);
   }
 
+  const chosenPositions = [...chosen].sort((a, b) => a - b);
   const branch = chosenPositions.map(index => ordered[index]);
   const beforeIds = new Set();
   let previous = null;
@@ -64,6 +72,6 @@ export function selectOrderedBranch(items, selection = {}, options) {
         chosenPositions.length > 0 &&
         chosenPositions[chosenPositions.length - 1] < ordered.length - 1
     },
-    selectionIndex: buildOrderedSelectionIndex(ordered, options)
+    selectionIndex
   };
 }
