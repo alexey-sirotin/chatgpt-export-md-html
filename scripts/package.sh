@@ -40,23 +40,8 @@ copy_tracked_files() {
   done < <(git ls-files)
 }
 
-copy_runtime_files() {
-  local target="$1"
-  local path
-  for path in vendor/katex.mjs vendor/KATEX-LICENSE.txt; do
-    if [[ ! -f "$path" ]]; then
-      echo "Missing generated runtime file: $path (run npm install first)" >&2
-      exit 1
-    fi
-    mkdir -p "$target/$(dirname "$path")"
-    cp "$path" "$target/$path"
-  done
-}
-
 copy_tracked_files "$CHROMIUM"
 copy_tracked_files "$FIREFOX"
-copy_runtime_files "$CHROMIUM"
-copy_runtime_files "$FIREFOX"
 
 python3 - "$CHROMIUM/manifest.json" "$FIREFOX/manifest.json" <<'PY'
 import copy
