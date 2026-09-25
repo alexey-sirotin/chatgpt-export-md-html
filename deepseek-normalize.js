@@ -67,50 +67,116 @@ function thinkingMarkdown(fragment) {
   return `#### Thinking${suffix}\n\n${text}`;
 }
 
+function baseMessage(turn, id, sourceRole, content, attachments) {
+  return {
+    id,
+    parentId: turn.parentId == null ? null : String(turn.parentId),
+    role: turn.role === "user" ? "user" : "assistant",
+    sourceRole,
+    createdAt: secondsToIso(turn.insertedAt),
+    model: turn.role === "assistant" ? (turn.model || null) : null,
+    content,
+    attachments
+  };
+}
+
 export function normalizeDeepSeekConversation(data, branch, omission = {}) {
   const messages = [];
 
   for (const turn of branch || []) {
-    const content = [];
-    const attachments = [];
-    let textSeed = 0;
+    const turnId = String(turn.id);
+    const isUser = turn.role === "user";
+    const requestContent = [];
+    const requestAttachments = [];
+    const thinkingContent = [];
+    const thinkingAttachments = [];
+    const responseContent = [];
+    const responseAttachments = [];
+    const fileAttachmentsForTurn = [];
+    let requestSeed = 0;
+    let thinkingSeed = 0;
+    let responseSeed = 0;
 
     for (const fragment of turn?.fragments || []) {
       const type = String(fragment?.type || "").toUpperCase();
 
       if (type === "FILE") {
-        attachments.push(...fileAttachments(fragment));
+        fileAttachmentsForTurn.push(...fileAttachments(fragment));
         continue;
       }
 
       if (type === "THINK") {
         const markdown = thinkingMarkdown(fragment);
-        if (markdown) content.push({ type: "text", text: markdown, format: "markdown" });
+        if (!markdown) continue;
+        thinkingSeed++;
+        const parsed = externalImageAttachments(markdown, `${turnId}:think:${thinkingSeed}`);
+        thinkingContent.push({ type: "text", text: parsed.text, format: "markdown" });
+        thinkingAttachments.push(...parsed.attachments);
         continue;
       }
 
       if (type !== "REQUEST" && type !== "RESPONSE") continue;
       const raw = typeof fragment?.content === "string" ? fragment.content : "";
       if (!raw.trim()) continue;
-      textSeed++;
-      const parsed = externalImageAttachments(raw, `${turn.id}:${textSeed}`);
-      content.push({ type: "text", text: parsed.text, format: "markdown" });
-      attachments.push(...parsed.attachments);
+
+      if (type === "REQUEST") {
+        requestSeed++;
+        const parsed = externalImageAttachments(raw, `${turnId}:request:${requestSeed}`);
+        requestContent.push({ type: "text", text: parsed.text, format: "markdown" });
+        requestAttachments.push(...parsed.attachments);
+      } else {
+        responseSeed++;
+        const parsed = externalImageAttachments(raw, `${turnId}:response:${responseSeed}`);
+        responseContent.push({ type: "text", text: parsed.text, format: "markdown" });
+        responseAttachments.push(...parsed.attachments);
+      }
     }
 
-    if (!content.length && !attachments.length) continue;
+    const turnMessages = [];
 
-    messages.push({
-      id: String(turn.id),
-      parentId: turn.parentId == null ? null : String(turn.parentId),
-      role: turn.role === "user" ? "user" : "assistant",
-      sourceRole: turn.role || null,
-      createdAt: secondsToIso(turn.insertedAt),
-      model: turn.role === "assistant" ? (turn.model || null) : null,
-      ...(omission.beforeIds?.has?.(String(turn.id)) ? { omittedBefore: true } : {}),
-      content,
-      attachments
-    });
+    if (isUser) {
+      const attachments = [...fileAttachmentsForTurn, ...requestAttachments];
+      if (requestContent.length || attachments.length) {
+        turnMessages.push(baseMessage(
+          turn,
+          turnId,
+          turn.role || "user",
+          requestContent,
+          attachments
+        ));
+      }
+    } else {
+      if (thinkingContent.length) {
+        turnMessages.push(baseMessage(
+          turn,
+          `${turnId}:think`,
+          "assistant-thinking",
+          thinkingContent,
+          thinkingAttachments
+        ));
+      }
+
+      const finalAttachments = [...fileAttachmentsForTurn, ...responseAttachments];
+      if (responseContent.length || finalAttachments.length) {
+        turnMessages.push(baseMessage(
+          turn,
+          turnId,
+          turn.role || "assistant",
+          responseContent,
+          finalAttachments
+        ));
+      }
+
+      // Preserve a thinking-only assistant turn even if it unexpectedly carries
+      // FILE fragments but no final RESPONSE.
+      if (!responseContent.length && fileAttachmentsForTurn.length && turnMessages.length) {
+        turnMessages[0].attachments.push(...fileAttachmentsForTurn);
+      }
+    }
+
+    if (!turnMessages.length) continue;
+    if (omission.beforeIds?.has?.(turnId)) turnMessages[0].omittedBefore = true;
+    messages.push(...turnMessages);
   }
 
   if (omission.omittedAtStart && messages.length) messages[0].omittedBefore = true;
