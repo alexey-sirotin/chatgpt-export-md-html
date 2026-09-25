@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chatgptPlatform,
   claudePlatform,
+  deepseekPlatform,
   grokPlatform,
   platformForUrl
 } from "../platform.js";
@@ -28,6 +29,12 @@ describe("platform registry", () => {
       .toBe("123e4567-e89b-12d3-a456-426614174000");
   });
 
+  it("detects DeepSeek conversation URLs", () => {
+    const url = "https://chat.deepseek.com/a/chat/s/chat%20id";
+    expect(platformForUrl(url)?.id).toBe("deepseek");
+    expect(deepseekPlatform.conversationIdFromUrl(url)).toBe("chat id");
+  });
+
   it("does not claim unrelated URLs", () => {
     expect(platformForUrl("https://example.com/c/123")).toBeNull();
     expect(chatgptPlatform.conversationIdFromUrl("https://example.com/c/123")).toBe("");
@@ -38,5 +45,7 @@ describe("platform registry", () => {
     expect(chatgptPlatform.conversationIdFromUrl("https://chatgpt.com/")).toBe("");
     expect(platformForUrl("https://grok.com/")?.id).toBe("grok");
     expect(grokPlatform.conversationIdFromUrl("https://grok.com/")).toBe("");
+    expect(platformForUrl("https://chat.deepseek.com/")?.id).toBe("deepseek");
+    expect(deepseekPlatform.conversationIdFromUrl("https://chat.deepseek.com/")).toBe("");
   });
 });

@@ -43,27 +43,33 @@ import {
   selectDeepSeekBranch
 } from "./deepseek-selection.js";
 
+function routeHandlers(hostname, pathPattern, decodeMatch = false) {
+  return {
+    matchesUrl(url) {
+      try {
+        return new URL(url).hostname === hostname;
+      } catch {
+        return false;
+      }
+    },
+
+    conversationIdFromUrl(url) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.hostname !== hostname) return "";
+        const match = parsed.pathname.match(pathPattern);
+        if (!match) return "";
+        return decodeMatch ? decodeURIComponent(match[1]) : match[1];
+      } catch {
+        return "";
+      }
+    }
+  };
+}
+
 export const chatgptPlatform = {
   id: "chatgpt",
-
-  matchesUrl(url) {
-    try {
-      return new URL(url).hostname === "chatgpt.com";
-    } catch {
-      return false;
-    }
-  },
-
-  conversationIdFromUrl(url) {
-    try {
-      const parsed = new URL(url);
-      if (parsed.hostname !== "chatgpt.com") return "";
-      const match = parsed.pathname.match(/\/c\/([^/?#]+)/);
-      return match ? decodeURIComponent(match[1]) : "";
-    } catch {
-      return "";
-    }
-  },
+  ...routeHandlers("chatgpt.com", /\/c\/([^/?#]+)/, true),
 
   conversationId(data) {
     return data?.conversation_id || "";
@@ -80,25 +86,7 @@ export const chatgptPlatform = {
 
 export const claudePlatform = {
   id: "claude",
-
-  matchesUrl(url) {
-    try {
-      return new URL(url).hostname === "claude.ai";
-    } catch {
-      return false;
-    }
-  },
-
-  conversationIdFromUrl(url) {
-    try {
-      const parsed = new URL(url);
-      if (parsed.hostname !== "claude.ai") return "";
-      const match = parsed.pathname.match(/\/chat\/([0-9a-f-]{36})/i);
-      return match ? match[1] : "";
-    } catch {
-      return "";
-    }
-  },
+  ...routeHandlers("claude.ai", /\/chat\/([0-9a-f-]{36})/i),
 
   conversationId(data) {
     return data?.uuid || "";
@@ -115,25 +103,7 @@ export const claudePlatform = {
 
 export const grokPlatform = {
   id: "grok",
-
-  matchesUrl(url) {
-    try {
-      return new URL(url).hostname === "grok.com";
-    } catch {
-      return false;
-    }
-  },
-
-  conversationIdFromUrl(url) {
-    try {
-      const parsed = new URL(url);
-      if (parsed.hostname !== "grok.com") return "";
-      const match = parsed.pathname.match(/\/(?:c|chat|conversation)\/([0-9a-f-]{36})(?:\/|$)/i);
-      return match ? match[1] : "";
-    } catch {
-      return "";
-    }
-  },
+  ...routeHandlers("grok.com", /\/(?:c|chat|conversation)\/([0-9a-f-]{36})(?:\/|$)/i),
 
   conversationId(data) {
     return data?.conversationId || "";
@@ -150,25 +120,7 @@ export const grokPlatform = {
 
 export const deepseekPlatform = {
   id: "deepseek",
-
-  matchesUrl(url) {
-    try {
-      return new URL(url).hostname === "chat.deepseek.com";
-    } catch {
-      return false;
-    }
-  },
-
-  conversationIdFromUrl(url) {
-    try {
-      const parsed = new URL(url);
-      if (parsed.hostname !== "chat.deepseek.com") return "";
-      const match = parsed.pathname.match(/\/a\/chat\/s\/([^/?#]+)/i);
-      return match ? decodeURIComponent(match[1]) : "";
-    } catch {
-      return "";
-    }
-  },
+  ...routeHandlers("chat.deepseek.com", /\/a\/chat\/s\/([^/?#]+)/i, true),
 
   conversationId(data) {
     return data?.conversationId || "";

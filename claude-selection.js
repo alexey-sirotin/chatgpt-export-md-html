@@ -1,4 +1,7 @@
-import { SELECTION_INDEX_SCHEMA_VERSION } from "./selection-index.js";
+import {
+  buildOrderedSelectionIndex,
+  selectOrderedBranch
+} from "./ordered-selection.js";
 
 export function claudeActiveBranch(data) {
   const byId = new Map((data?.chat_messages || []).map(message => [message.uuid, message]));
@@ -20,57 +23,16 @@ export function claudeActiveBranch(data) {
   return branch.reverse();
 }
 
-function positionalId(index) {
-  return "claude-index:" + index;
-}
+const selectionOptions = {
+  prefix: "claude",
+  idOf: message => message.uuid,
+  kindOf: message => message.sender === "human" ? "user" : "assistant"
+};
 
 export function buildClaudeSelectionIndex(data) {
-  const branch = claudeActiveBranch(data);
-  return {
-    schemaVersion: SELECTION_INDEX_SCHEMA_VERSION,
-    groups: branch.map((message, index) => ({
-      kind: message.sender === "human" ? "user" : "assistant",
-      directIds: [String(message.uuid), positionalId(index)],
-      exchangeIds: []
-    }))
-  };
+  return buildOrderedSelectionIndex(claudeActiveBranch(data), selectionOptions);
 }
 
 export function selectClaudeBranch(data, selection = {}) {
-  const activeBranch = claudeActiveBranch(data);
-  const selectedIds = new Set((selection.selectedMessageIds || []).map(String));
-  const excludedIds = new Set((selection.excludedMessageIds || []).map(String));
-
-  const chosenPositions = [];
-  for (let index = 0; index < activeBranch.length; index++) {
-    const message = activeBranch[index];
-    const ids = [String(message.uuid), positionalId(index)];
-    const included = selection.selectAll
-      ? !ids.some(id => excludedIds.has(id))
-      : ids.some(id => selectedIds.has(id));
-    if (included) chosenPositions.push(index);
-  }
-
-  const branch = chosenPositions.map(index => activeBranch[index]);
-  const beforeIds = new Set();
-  let previous = null;
-
-  for (const index of chosenPositions) {
-    if (previous != null && index > previous + 1) {
-      beforeIds.add(activeBranch[index].uuid);
-    }
-    previous = index;
-  }
-
-  return {
-    branch,
-    omission: {
-      beforeIds,
-      omittedAtStart: chosenPositions.length > 0 && chosenPositions[0] > 0,
-      omittedAtEnd:
-        chosenPositions.length > 0 &&
-        chosenPositions[chosenPositions.length - 1] < activeBranch.length - 1
-    },
-    selectionIndex: buildClaudeSelectionIndex(data)
-  };
+  return selectOrderedBranch(claudeActiveBranch(data), selection, selectionOptions);
 }
