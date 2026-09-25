@@ -42,6 +42,8 @@ COMMON_ROOT_FILES = {
     "selection-index.js",
     "selection-matcher.js",
     "utils.js",
+    "vendor/KATEX-LICENSE.txt",
+    "vendor/katex.mjs",
     "zip.js",
 }
 
