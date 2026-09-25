@@ -8,6 +8,7 @@
 # Local build/output directories
 dist/
 build/
+vendor/
 
 # Editor/IDE files
 .vscode/
