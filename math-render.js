@@ -36,12 +36,24 @@ function findClosing(source, start, close) {
   return -1;
 }
 
+function markdownLinkAt(source, index) {
+  const match = source.slice(index).match(/^!?\[[^\]\n]*\]\([^\n)]*\)/);
+  return match?.[0] || null;
+}
+
 export function replaceInlineMath(text, stash) {
   const source = String(text ?? "");
   let out = "";
   let index = 0;
 
   while (index < source.length) {
+    const protectedLink = markdownLinkAt(source, index);
+    if (protectedLink) {
+      out += protectedLink;
+      index += protectedLink.length;
+      continue;
+    }
+
     if (source.startsWith("\\(", index) && !isEscaped(source, index)) {
       const close = findClosing(source, index + 2, "\\)");
       if (close >= 0) {
