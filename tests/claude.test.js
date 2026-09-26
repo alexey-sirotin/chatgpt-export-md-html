@@ -142,4 +142,35 @@ describe("normalizeClaudeConversation", () => {
       isImage: true
     });
   });
+
+  it("attaches captured MCP custom visuals to the matching active-branch row", () => {
+    const root = "00000000-0000-4000-8000-000000000000";
+    const user = message("u1", "human", root);
+    const assistant = message("a1", "assistant", "u1", [
+      { type: "text", text: "Visible reply with a custom visual" }
+    ]);
+    const svg = '<svg viewBox="0 0 680 200"><rect width="680" height="200"/></svg>';
+    const data = {
+      uuid: "conv-visual",
+      name: "Claude visual test",
+      current_leaf_message_uuid: "a1",
+      chat_messages: [user, assistant],
+      __customVisuals: [{ rowIndex: 1, svg, width: 422, height: 124 }]
+    };
+
+    const normalized = normalizeClaudeConversation(data, [assistant]);
+    const attachment = normalized.messages[0].attachments[0];
+
+    expect(attachment).toMatchObject({
+      source: "claude-custom-visual",
+      id: "claude-visual:a1:0",
+      originalName: "claude-visual-2-1.svg",
+      mimeType: "image/svg+xml",
+      width: 422,
+      height: 124,
+      isImage: true
+    });
+    expect(attachment.__inlineSvg).toBe(svg);
+    expect(JSON.stringify(attachment)).not.toContain("<svg");
+  });
 });
