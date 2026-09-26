@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeClaudeConversation } from "../claude-normalize.js";
+import { claudeCustomVisualTargets } from "../claude-visual-capture.js";
 import {
   buildClaudeSelectionIndex,
   claudeActiveBranch,
@@ -56,6 +57,60 @@ describe("Claude branch and selection", () => {
     expect(selected.branch.map(item => item.uuid)).toEqual(["a1", "a2"]);
     expect(selected.omission.omittedAtStart).toBe(true);
     expect(selected.omission.beforeIds.has("a2")).toBe(true);
+  });
+});
+
+describe("Claude custom visual discovery", () => {
+  const root = "00000000-0000-4000-8000-000000000000";
+
+  it("finds visualize:show_widget rows from the active API branch", () => {
+    const u1 = message("u1", "human", root);
+    const a1 = message("a1", "assistant", "u1", [
+      { type: "tool_use", name: "visualize:read_me", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:read_me", content: [] },
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:show_widget", content: [] },
+      { type: "text", text: "First visual" }
+    ]);
+    const u2 = message("u2", "human", "a1");
+    const inactive = message("inactive", "assistant", "u2", [
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true }
+    ]);
+    const a2 = message("a2", "assistant", "u2", [
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:show_widget", content: [] },
+      { type: "text", text: "Second visual" }
+    ]);
+
+    expect(claudeCustomVisualTargets({
+      current_leaf_message_uuid: "a2",
+      chat_messages: [u1, a1, u2, inactive, a2]
+    })).toEqual([
+      { rowIndex: 1, count: 1 },
+      { rowIndex: 3, count: 1 }
+    ]);
+  });
+
+  it("counts multiple show_widget calls in one message and falls back to tool_result", () => {
+    const u1 = message("u1", "human", root);
+    const a1 = message("a1", "assistant", "u1", [
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:show_widget", content: [] },
+      { type: "tool_result", name: "visualize:show_widget", content: [] }
+    ]);
+    const u2 = message("u2", "human", "a1");
+    const a2 = message("a2", "assistant", "u2", [
+      { type: "tool_result", name: "visualize:show_widget", content: [] }
+    ]);
+
+    expect(claudeCustomVisualTargets({
+      current_leaf_message_uuid: "a2",
+      chat_messages: [u1, a1, u2, a2]
+    })).toEqual([
+      { rowIndex: 1, count: 2 },
+      { rowIndex: 3, count: 1 }
+    ]);
   });
 });
 
