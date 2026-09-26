@@ -112,16 +112,22 @@ function customVisualAttachments(data, messageId, activeIndexById) {
 
   return (data?.__customVisuals || [])
     .filter(item => item?.rowIndex === rowIndex && typeof item.svg === "string" && item.svg)
-    .map((item, index) => ({
-      source: "claude-custom-visual",
-      id: `claude-visual:${messageId}:${index}`,
-      originalName: `claude-visual-${rowIndex + 1}-${index + 1}.svg`,
-      mimeType: "image/svg+xml",
-      width: item.width || null,
-      height: item.height || null,
-      isImage: true,
-      __inlineSvg: item.svg
-    }));
+    .map((item, index) => {
+      const attachment = {
+        source: "claude-custom-visual",
+        id: `claude-visual:${messageId}:${index}`,
+        originalName: `claude-visual-${rowIndex + 1}-${index + 1}.svg`,
+        mimeType: "image/svg+xml",
+        width: item.width || null,
+        height: item.height || null,
+        isImage: true
+      };
+      Object.defineProperty(attachment, "__inlineSvg", {
+        value: item.svg,
+        enumerable: false
+      });
+      return attachment;
+    });
 }
 
 export function normalizeClaudeConversation(data, branch, omission = {}) {
