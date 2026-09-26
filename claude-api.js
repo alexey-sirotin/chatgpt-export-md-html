@@ -1,6 +1,183 @@
 import { t } from "./utils.js";
 
 const PAGE_ABORT_CONTROLLERS_KEY = "__chatgptExportAbortControllers";
+const CLAUDE_VISUAL_CAPTURE_KEY = "__chatgptExportClaudeVisualCapture";
+
+async function captureClaudeCustomVisualsInPage(tabId) {
+  const token = crypto.randomUUID();
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [CLAUDE_VISUAL_CAPTURE_KEY, token],
+      func: (registryKey, token) => {
+        const old = globalThis[registryKey];
+        if (old?.handler) window.removeEventListener("message", old.handler);
+
+        const state = { token, items: [], handler: null };
+        state.handler = event => {
+          const data = event?.data;
+          if (
+            !data ||
+            data.type !== "chatgpt-export-claude-visual" ||
+            data.token !== token ||
+            !data.svg
+          ) return;
+          state.items.push({ source: event.source, payload: data });
+        };
+        globalThis[registryKey] = state;
+        window.addEventListener("message", state.handler);
+      }
+    });
+
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      args: [token],
+      func: token => {
+        if (
+          !/(?:^|\.)claudemcpcontent\.com$/i.test(location.hostname) ||
+          location.pathname !== "/mcp_apps"
+        ) return null;
+
+        const candidates = [...document.querySelectorAll("svg")]
+          .map(svg => ({ svg, rect: svg.getBoundingClientRect() }))
+          .filter(item => item.rect.width > 100 && item.rect.height > 50)
+          .sort((a, b) =>
+            (b.rect.width * b.rect.height) - (a.rect.width * a.rect.height)
+          );
+        const source = candidates[0];
+        if (!source) return null;
+
+        const clone = source.svg.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+        const properties = [
+          "color",
+          "fill",
+          "fill-opacity",
+          "stroke",
+          "stroke-opacity",
+          "stroke-width",
+          "stroke-linecap",
+          "stroke-linejoin",
+          "stroke-dasharray",
+          "opacity",
+          "font-family",
+          "font-size",
+          "font-weight",
+          "font-style",
+          "letter-spacing",
+          "text-anchor",
+          "dominant-baseline",
+          "visibility",
+          "display",
+          "paint-order",
+          "vector-effect",
+          "marker-start",
+          "marker-mid",
+          "marker-end"
+        ];
+
+        const originals = [source.svg, ...source.svg.querySelectorAll("*")];
+        const clones = [clone, ...clone.querySelectorAll("*")];
+        originals.forEach((element, index) => {
+          const target = clones[index];
+          if (!target) return;
+          const style = getComputedStyle(element);
+          for (const property of properties) {
+            const value = style.getPropertyValue(property);
+            if (value) target.style.setProperty(property, value);
+          }
+        });
+
+        for (const script of clone.querySelectorAll("script")) script.remove();
+        for (const foreignObject of clone.querySelectorAll("foreignObject")) foreignObject.remove();
+        for (const element of [clone, ...clone.querySelectorAll("*")]) {
+          for (const attr of [...element.attributes]) {
+            if (/^on/i.test(attr.name)) {
+              element.removeAttribute(attr.name);
+              continue;
+            }
+            if (
+              /^(?:href|xlink:href)$/i.test(attr.name) &&
+              /^\s*javascript:/i.test(attr.value)
+            ) {
+              element.removeAttribute(attr.name);
+            }
+          }
+        }
+
+        const viewBox = clone.viewBox?.baseVal;
+        if (viewBox?.width > 0 && viewBox?.height > 0) {
+          clone.setAttribute("width", String(viewBox.width));
+          clone.setAttribute("height", String(viewBox.height));
+        } else {
+          clone.setAttribute("width", String(Math.round(source.rect.width)));
+          clone.setAttribute("height", String(Math.round(source.rect.height)));
+        }
+
+        const svg = new XMLSerializer().serializeToString(clone);
+        window.parent.postMessage({
+          type: "chatgpt-export-claude-visual",
+          token,
+          svg,
+          width: source.rect.width,
+          height: source.rect.height
+        }, "*");
+        return true;
+      }
+    });
+
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [CLAUDE_VISUAL_CAPTURE_KEY, token],
+      func: async (registryKey, token) => {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const state = globalThis[registryKey];
+        if (!state || state.token !== token) return [];
+
+        const frames = [...document.querySelectorAll("iframe")];
+        const visuals = [];
+        for (const item of state.items) {
+          const frame = frames.find(candidate => candidate.contentWindow === item.source);
+          const row = frame?.closest?.('[data-testid="transcript-row"][data-index]');
+          const rowIndex = Number(row?.getAttribute("data-index"));
+          if (!Number.isInteger(rowIndex) || rowIndex < 0) continue;
+          visuals.push({
+            rowIndex,
+            svg: item.payload.svg,
+            width: Number(item.payload.width) || null,
+            height: Number(item.payload.height) || null
+          });
+        }
+
+        if (state.handler) window.removeEventListener("message", state.handler);
+        delete globalThis[registryKey];
+        return visuals;
+      }
+    });
+
+    return Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.warn("chatgpt-export-md-html: could not capture Claude custom visuals", error);
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN",
+        args: [CLAUDE_VISUAL_CAPTURE_KEY],
+        func: registryKey => {
+          const state = globalThis[registryKey];
+          if (state?.handler) window.removeEventListener("message", state.handler);
+          delete globalThis[registryKey];
+        }
+      });
+    } catch {}
+    return [];
+  }
+}
 
 export async function getClaudeConversationInPage(tabId, exportId = null) {
   const noActiveConversation = t("noActiveConversation");
@@ -83,7 +260,9 @@ export async function getClaudeConversationInPage(tabId, exportId = null) {
   if (!result || !Array.isArray(result.chat_messages) || !result.current_leaf_message_uuid) {
     throw new Error(noActiveConversation);
   }
-  return result;
+
+  const customVisuals = await captureClaudeCustomVisualsInPage(tabId);
+  return customVisuals.length ? { ...result, __customVisuals: customVisuals } : result;
 }
 
 export async function downloadClaudeAttachmentInPage(
@@ -92,6 +271,30 @@ export async function downloadClaudeAttachmentInPage(
   metadataOnly = false,
   exportId = null
 ) {
+  if (attachment?.source === "claude-custom-visual") {
+    const originalName = attachment.originalName || "claude-visual.svg";
+    const type = "image/svg+xml";
+    if (metadataOnly) {
+      return {
+        bytes: null,
+        type,
+        originalName,
+        fileId: attachment.id || null,
+        libraryFileId: null
+      };
+    }
+
+    const svg = typeof attachment.__inlineSvg === "string" ? attachment.__inlineSvg : "";
+    if (!svg) throw new Error("Claude custom visual SVG is missing");
+    return {
+      bytes: Array.from(new TextEncoder().encode(svg)),
+      type,
+      originalName,
+      fileId: attachment.id || null,
+      libraryFileId: null
+    };
+  }
+
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
