@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/prepare-katex.mjs",
+    "postinstall": "node scripts/prepare-katex.mjs && node scripts/prepare-mermaid.mjs",
     "test": "vitest run",
     "test:package": "python3 scripts/package-smoke.py"
   },
   "devDependencies": {
     "jsdom": "^27.0.0",
     "katex": "0.18.9",
+    "mermaid": "11.17.2",
     "vitest": "4.1.11"
   },
   "engines": {
