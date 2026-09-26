@@ -209,7 +209,7 @@ def check_firefox_manifest(source, packaged, archive):
         fail(f"{archive.name} has wrong Firefox background manifest")
 
     gecko = packaged.get("browser_specific_settings", {}).get("gecko", {})
-    if gecko.get("id") != "chatgpt-export-md-html@alexey-sirotin":
+    if gecko.get("id") != "ai-chat-export@alexey-sirotin":
         fail(f"{archive.name} has wrong Firefox extension id")
     if gecko.get("strict_min_version") != "140.0":
         fail(f"{archive.name} has wrong Firefox minimum version")
@@ -235,8 +235,8 @@ def main():
         fail("source manifest has no version")
 
     archives = {
-        "chromium": DIST / f"chatgpt-export-md-html-{version}-chromium.zip",
-        "firefox": DIST / f"chatgpt-export-md-html-{version}-firefox.zip",
+        "chromium": DIST / f"ai-chat-export-{version}-chromium.zip",
+        "firefox": DIST / f"ai-chat-export-{version}-firefox.zip",
     }
 
     for browser, archive in archives.items():
