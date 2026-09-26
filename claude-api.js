@@ -6,31 +6,7 @@ const CLAUDE_VISUAL_CAPTURE_KEY = "__chatgptExportClaudeVisualCapture";
 async function captureClaudeCustomVisualsInPage(tabId) {
   const token = crypto.randomUUID();
 
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      args: [CLAUDE_VISUAL_CAPTURE_KEY, token],
-      func: (registryKey, token) => {
-        const old = globalThis[registryKey];
-        if (old?.handler) window.removeEventListener("message", old.handler);
-
-        const state = { token, items: [], handler: null };
-        state.handler = event => {
-          const data = event?.data;
-          if (
-            !data ||
-            data.type !== "chatgpt-export-claude-visual" ||
-            data.token !== token ||
-            !data.svg
-          ) return;
-          state.items.push({ source: event.source, payload: data });
-        };
-        globalThis[registryKey] = state;
-        window.addEventListener("message", state.handler);
-      }
-    });
-
+  const captureRound = async () => {
     await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
       world: "MAIN",
@@ -129,38 +105,222 @@ async function captureClaudeCustomVisualsInPage(tabId) {
         return true;
       }
     });
+  };
 
+  const missingRows = async () => {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [CLAUDE_VISUAL_CAPTURE_KEY, token],
+      func: (registryKey, token) => {
+        const state = globalThis[registryKey];
+        if (!state || state.token !== token) return [];
+        return [...new Set(
+          state.frames
+            .filter(item => !state.visuals.has(item.key))
+            .map(item => item.rowIndex)
+        )];
+      }
+    });
+    return Array.isArray(result) ? result : [];
+  };
+
+  const rowStillMissing = async rowIndex => {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [CLAUDE_VISUAL_CAPTURE_KEY, token, rowIndex],
+      func: (registryKey, token, rowIndex) => {
+        const state = globalThis[registryKey];
+        if (!state || state.token !== token) return false;
+        return state.frames.some(
+          item => item.rowIndex === rowIndex && !state.visuals.has(item.key)
+        );
+      }
+    });
+    return result === true;
+  };
+
+  const scrollRowIntoView = async (rowIndex, delayMs) => {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [CLAUDE_VISUAL_CAPTURE_KEY, token, rowIndex, delayMs],
+      func: async (registryKey, token, rowIndex, delayMs) => {
+        const state = globalThis[registryKey];
+        if (!state || state.token !== token) return false;
+        const target = state.frames.find(item => item.rowIndex === rowIndex);
+        const row = target?.frame?.closest?.('[data-testid="transcript-row"][data-index]');
+        if (!row) return false;
+
+        row.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        return true;
+      }
+    });
+    return result === true;
+  };
+
+  const finishCapture = async () => {
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
       args: [CLAUDE_VISUAL_CAPTURE_KEY, token],
       func: async (registryKey, token) => {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 60));
         const state = globalThis[registryKey];
         if (!state || state.token !== token) return [];
 
-        const frames = [...document.querySelectorAll("iframe")];
-        const visuals = [];
-        for (const item of state.items) {
-          const frame = frames.find(candidate => candidate.contentWindow === item.source);
-          const row = frame?.closest?.('[data-testid="transcript-row"][data-index]');
-          const rowIndex = Number(row?.getAttribute("data-index"));
-          if (!Number.isInteger(rowIndex) || rowIndex < 0) continue;
-          visuals.push({
-            rowIndex,
-            svg: item.payload.svg,
-            width: Number(item.payload.width) || null,
-            height: Number(item.payload.height) || null
-          });
+        for (const item of [...state.scrollPositions].reverse()) {
+          try {
+            item.element.scrollLeft = item.left;
+            item.element.scrollTop = item.top;
+          } catch {}
         }
+
+        const visuals = [...state.visuals.values()]
+          .sort((a, b) =>
+            a.rowIndex - b.rowIndex || a.visualIndex - b.visualIndex
+          )
+          .map(({ visualIndex, ...visual }) => visual);
 
         if (state.handler) window.removeEventListener("message", state.handler);
         delete globalThis[registryKey];
         return visuals;
       }
     });
-
     return Array.isArray(result) ? result : [];
+  };
+
+  try {
+    const [{ result: setup }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [CLAUDE_VISUAL_CAPTURE_KEY, token],
+      func: (registryKey, token) => {
+        const old = globalThis[registryKey];
+        if (old?.handler) window.removeEventListener("message", old.handler);
+        for (const item of [...(old?.scrollPositions || [])].reverse()) {
+          try {
+            item.element.scrollLeft = item.left;
+            item.element.scrollTop = item.top;
+          } catch {}
+        }
+
+        const isMcpFrame = frame => {
+          try {
+            const url = new URL(frame.src, location.href);
+            return (
+              /(?:^|\.)claudemcpcontent\.com$/i.test(url.hostname) &&
+              url.pathname === "/mcp_apps"
+            );
+          } catch {
+            return false;
+          }
+        };
+
+        const frames = [];
+        const countsByRow = new Map();
+        for (const frame of [...document.querySelectorAll("iframe")].filter(isMcpFrame)) {
+          const row = frame.closest('[data-testid="transcript-row"][data-index]');
+          const rowIndex = Number(row?.getAttribute("data-index"));
+          if (!Number.isInteger(rowIndex) || rowIndex < 0) continue;
+
+          const visualIndex = countsByRow.get(rowIndex) || 0;
+          countsByRow.set(rowIndex, visualIndex + 1);
+          frames.push({
+            frame,
+            rowIndex,
+            visualIndex,
+            key: `${rowIndex}:${visualIndex}`
+          });
+        }
+
+        const scrollPositions = [];
+        const seenScrollElements = new Set();
+        const rememberScrollableAncestors = element => {
+          for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            const scrollable =
+              /(?:auto|scroll)/.test(style.overflowY) &&
+              parent.scrollHeight > parent.clientHeight + 1;
+            if (scrollable && !seenScrollElements.has(parent)) {
+              seenScrollElements.add(parent);
+              scrollPositions.push({
+                element: parent,
+                left: parent.scrollLeft,
+                top: parent.scrollTop
+              });
+            }
+          }
+        };
+        for (const item of frames) rememberScrollableAncestors(item.frame);
+
+        const scrollingElement = document.scrollingElement;
+        if (scrollingElement && !seenScrollElements.has(scrollingElement)) {
+          scrollPositions.push({
+            element: scrollingElement,
+            left: scrollingElement.scrollLeft,
+            top: scrollingElement.scrollTop
+          });
+        }
+
+        const state = {
+          token,
+          frames,
+          visuals: new Map(),
+          scrollPositions,
+          handler: null
+        };
+        state.handler = event => {
+          const data = event?.data;
+          if (
+            !data ||
+            data.type !== "chatgpt-export-claude-visual" ||
+            data.token !== token ||
+            !data.svg
+          ) return;
+
+          const item = state.frames.find(frame => frame.frame.contentWindow === event.source);
+          if (!item) return;
+          state.visuals.set(item.key, {
+            rowIndex: item.rowIndex,
+            visualIndex: item.visualIndex,
+            svg: data.svg,
+            width: Number(data.width) || null,
+            height: Number(data.height) || null
+          });
+        };
+        globalThis[registryKey] = state;
+        window.addEventListener("message", state.handler);
+
+        return {
+          expectedCount: frames.length,
+          rows: [...new Set(frames.map(item => item.rowIndex))]
+        };
+      }
+    });
+
+    if (!setup?.expectedCount) return await finishCapture();
+
+    // Capture whatever Claude currently has rendered before moving the transcript.
+    await captureRound();
+    await new Promise(resolve => setTimeout(resolve, 75));
+
+    // Claude may keep an offscreen MCP iframe mounted while suspending its inner
+    // visual DOM. Bring only the still-missing rows into view, let the widget
+    // rehydrate, capture it, then restore the user's original scroll position.
+    for (const rowIndex of await missingRows()) {
+      for (const delayMs of [250, 500]) {
+        if (!(await scrollRowIntoView(rowIndex, delayMs))) break;
+        await captureRound();
+        await new Promise(resolve => setTimeout(resolve, 75));
+        if (!(await rowStillMissing(rowIndex))) break;
+      }
+    }
+
+    return await finishCapture();
   } catch (error) {
     console.warn("chatgpt-export-md-html: could not capture Claude custom visuals", error);
     try {
@@ -170,6 +330,12 @@ async function captureClaudeCustomVisualsInPage(tabId) {
         args: [CLAUDE_VISUAL_CAPTURE_KEY],
         func: registryKey => {
           const state = globalThis[registryKey];
+          for (const item of [...(state?.scrollPositions || [])].reverse()) {
+            try {
+              item.element.scrollLeft = item.left;
+              item.element.scrollTop = item.top;
+            } catch {}
+          }
           if (state?.handler) window.removeEventListener("message", state.handler);
           delete globalThis[registryKey];
         }
