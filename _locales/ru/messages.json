@@ -1,9 +1,9 @@
 {
   "extensionName": {
-    "message": "ChatGPT Export to Markdown & HTML"
+    "message": "AI Chat Export"
   },
   "extensionDescription": {
-    "message": "Экспорт текущей ветки ChatGPT в Markdown + HTML + JSON с локальными вложениями."
+    "message": "Экспорт чатов ChatGPT, Claude, Grok и DeepSeek в Markdown + HTML + JSON с локальными вложениями."
   },
   "exportNamePlaceholder": {
     "message": "Имя экспорта"
@@ -71,7 +71,7 @@
     "message": "Получаю список сообщений…"
   },
   "openChatHint": {
-    "message": "Откройте чат на chatgpt.com или claude.ai и обновите страницу."
+    "message": "Откройте поддерживаемый чат в ChatGPT, Claude, Grok или DeepSeek и обновите страницу."
   },
   "nothingSelected": {
     "message": "Ничего не выбрано. Отметьте сообщения или нажмите «Все»."
@@ -210,7 +210,7 @@
     "message": "JSON"
   },
   "defaultExportName": {
-    "message": "Экспорт ChatGPT"
+    "message": "Экспорт AI-чата"
   },
   "unknownError": {
     "message": "Неизвестная ошибка"
