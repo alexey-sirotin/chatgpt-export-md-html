@@ -3,7 +3,7 @@
     "message": "AI Chat Export"
   },
   "extensionDescription": {
-    "message": "Export chats from ChatGPT, Claude, Grok, and DeepSeek to Markdown + HTML + JSON with local attachments."
+    "message": "Export chats from ChatGPT, Claude, Grok, and DeepSeek to Markdown + HTML with local attachments."
   },
   "exportNamePlaceholder": {
     "message": "Export name"
@@ -205,9 +205,6 @@
   },
   "progressWaitingDownload": {
     "message": "Waiting for the archive download to finish…"
-  },
-  "formatJson": {
-    "message": "JSON"
   },
   "defaultExportName": {
     "message": "AI chat export"
