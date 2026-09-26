@@ -1,45 +1,51 @@
 # Privacy Policy
 
-**Effective date:** September 11, 2026
+**Effective date:** September 26, 2026
 
-This privacy policy applies to the **ChatGPT Export to Markdown & HTML** browser extension (the "Extension").
+This privacy policy applies to the **AI Chat Export** browser extension (the "Extension").
 
-The Extension is an independent open-source project. It is not affiliated with or endorsed by OpenAI.
+The Extension is an independent open-source project. It is not affiliated with or endorsed by OpenAI, Anthropic, xAI, or DeepSeek.
 
 ## Summary
 
-The Extension processes the current ChatGPT conversation in the user's browser only when the user asks it to create an export. It does not operate a developer-controlled server and does not send analytics, telemetry, advertising identifiers, or conversation contents to the developer or to unrelated third parties.
+The Extension processes the active conversation from a supported AI chat service in the user's browser only when the user asks it to create an export or load message-selection data. It does not operate a developer-controlled server and does not send analytics, telemetry, advertising identifiers, or conversation contents to the developer.
+
+Supported services currently include ChatGPT, Claude, Grok, and DeepSeek.
 
 ## Data handled by the Extension
 
 To provide its export function, the Extension may handle:
 
-- the text, images, audio, files, links, timestamps, and other content of the current ChatGPT conversation;
-- the conversation title, conversation identifier, current ChatGPT page URL, and message metadata;
-- the user's existing ChatGPT authentication information, used transiently to request the selected conversation and its attachments from ChatGPT;
-- export preferences, display names entered by the user, temporary progress state, and temporary message-selection cache data.
+- conversation text, images, audio, files, links, timestamps, reasoning/thinking blocks when exposed by the provider, and other conversation content;
+- conversation titles, identifiers, page URLs, message identifiers, branch metadata, and provider-specific message metadata;
+- the user's existing authenticated browser session for the supported service, used transiently to request conversation data and attachments;
+- export preferences, display names entered by the user, temporary progress state, filename drafts, and temporary message-selection cache data.
 
-ChatGPT authentication information is not written to extension storage or included in exported archives.
+Authentication information is not written to extension storage or included in exported archives.
 
 ## How data is used
 
-Conversation data and attachments are used only to create the Markdown, HTML, JSON, and ZIP files requested by the user. The resulting archive is downloaded to a location selected through the browser.
+Conversation data and attachments are used only to create the Markdown, HTML, JSON, SVG/image, and ZIP files requested by the user.
 
 Preferences may be stored in the browser's extension storage so that the Extension can remember the user's choices. Temporary progress, filename draft, and selection-cache data may be stored in session storage to support the current browser session.
 
 ## Network communication
 
-The Extension communicates with ChatGPT over HTTPS, using the user's existing signed-in session, to retrieve the current conversation and files referenced by that conversation. Attachment downloads may use HTTPS file-delivery URLs returned by ChatGPT.
+The Extension may communicate over HTTPS with the supported service currently being exported and with related provider-controlled file, media, or widget/content-delivery hosts. This includes, depending on the provider, domains used by ChatGPT, Claude, Grok, and DeepSeek to deliver conversation data, attachments, generated files, images, or rendered content.
 
-The Extension does not transmit user data to a server operated by the developer. It does not add analytics, telemetry, advertising, or tracking requests.
+Some provider responses can contain externally referenced images or files. When the Extension supports localizing such content, it may request the referenced HTTPS URL directly in order to include a local copy in the export. That request is made by the user's browser to the referenced host; ordinary network metadata such as the user's IP address may therefore be visible to that host.
 
-Use of ChatGPT remains subject to OpenAI's own terms and privacy policy.
+The Extension does not transmit conversation contents to a server operated by the developer. It does not add analytics, telemetry, advertising, or tracking requests.
+
+Use of each supported service remains subject to that service's own terms and privacy policy.
 
 ## Sharing and disclosure
 
 The developer does not receive, sell, rent, share, or disclose the user's conversation data, authentication information, browsing activity, or exported files.
 
-The Extension does not use user data for advertising, profiling, creditworthiness, lending, or purposes unrelated to its single export function. No human is given access to user data by the Extension.
+The Extension does not use user data for advertising, profiling, creditworthiness, lending, or purposes unrelated to its export function. No human is given access to user data by the Extension.
+
+Direct requests to supported provider hosts or to externally referenced media hosts are made only as part of retrieving content requested for export; those hosts process the request under their own policies.
 
 ## Data retention and deletion
 
@@ -50,6 +56,8 @@ Persistent Extension preferences remain in browser extension storage until the u
 ## Security
 
 Network requests initiated by the Extension use HTTPS. Processing and archive creation take place locally in the browser.
+
+Provider authentication is reused only through the user's existing browser session. Authentication information is not copied into exported files or developer-controlled storage.
 
 ## Chrome Web Store Limited Use disclosure
 
@@ -63,52 +71,58 @@ If the Extension's data practices change, this policy will be updated before a v
 
 Questions or privacy concerns can be submitted through the project's public issue tracker:
 
-https://github.com/alexey-sirotin/chatgpt-export-md-html/issues
+https://github.com/alexey-sirotin/ai-chat-export/issues
 
 ---
 
 # Политика конфиденциальности
 
-**Дата вступления в силу:** 11 сентября 2026 года
+**Дата вступления в силу:** 26 сентября 2026 года
 
-Эта политика относится к браузерному расширению **ChatGPT Export to Markdown & HTML** («Расширение»).
+Эта политика относится к браузерному расширению **AI Chat Export** («Расширение»).
 
-Расширение является независимым проектом с открытым исходным кодом и не связано с OpenAI и не одобрено ею.
+Расширение является независимым проектом с открытым исходным кодом и не связано с OpenAI, Anthropic, xAI или DeepSeek и не одобрено ими.
 
 ## Кратко
 
-Расширение обрабатывает текущую беседу ChatGPT в браузере пользователя только после команды на создание экспорта. У Расширения нет сервера под управлением разработчика; оно не отправляет разработчику или посторонним третьим сторонам аналитику, телеметрию, рекламные идентификаторы или содержимое бесед.
+Расширение обрабатывает активную беседу из поддерживаемого AI-сервиса в браузере пользователя только после команды на создание экспорта или загрузку данных для выбора сообщений. У Расширения нет сервера под управлением разработчика; оно не отправляет разработчику аналитику, телеметрию, рекламные идентификаторы или содержимое бесед.
+
+Сейчас поддерживаются ChatGPT, Claude, Grok и DeepSeek.
 
 ## Какие данные обрабатываются
 
 Для создания экспорта Расширение может обрабатывать:
 
-- текст, изображения, аудио, файлы, ссылки, временные метки и другое содержимое текущей беседы ChatGPT;
-- название и идентификатор беседы, URL текущей страницы ChatGPT и метаданные сообщений;
-- данные существующего сеанса ChatGPT, которые временно используются для запроса выбранной беседы и её вложений;
-- настройки экспорта, введённые пользователем отображаемые имена, временное состояние выполнения и временный кеш выбора сообщений.
+- текст беседы, изображения, аудио, файлы, ссылки, временные метки, блоки reasoning/thinking, если сервис их показывает, и другое содержимое беседы;
+- название и идентификатор беседы, URL страницы, идентификаторы сообщений, данные о ветках и другие метаданные сообщений, зависящие от конкретного сервиса;
+- существующий авторизованный сеанс пользователя в поддерживаемом сервисе, который временно используется для запроса данных беседы и вложений;
+- настройки экспорта, введённые пользователем отображаемые имена, временное состояние выполнения, черновики имени файла и временный кеш выбора сообщений.
 
-Данные аутентификации ChatGPT не записываются в хранилище Расширения и не включаются в экспортируемые архивы.
+Данные аутентификации не записываются в хранилище Расширения и не включаются в экспортируемые архивы.
 
 ## Как используются данные
 
-Содержимое беседы и вложения используются только для создания запрошенных пользователем файлов Markdown, HTML, JSON и ZIP. Готовый архив сохраняется через стандартный механизм загрузок браузера.
+Содержимое беседы и вложения используются только для создания запрошенных пользователем файлов Markdown, HTML, JSON, SVG/изображений и ZIP.
 
 Настройки могут храниться в локальном хранилище расширений браузера, чтобы Расширение запоминало выбор пользователя. Временные данные о ходе экспорта, черновике имени файла и кеше выбора сообщений могут храниться в хранилище текущего сеанса браузера.
 
 ## Сетевое взаимодействие
 
-Расширение обращается к ChatGPT по HTTPS, используя уже существующий сеанс пользователя, чтобы получить текущую беседу и связанные с ней файлы. Для загрузки вложений могут использоваться HTTPS-адреса файлов, полученные от ChatGPT.
+Расширение может обращаться по HTTPS к поддерживаемому сервису, из которого выполняется экспорт, а также к связанным с ним адресам доставки файлов, медиа, виджетов и другого содержимого. В зависимости от сервиса это могут быть адреса, используемые ChatGPT, Claude, Grok и DeepSeek для передачи данных беседы, вложений, сгенерированных файлов, изображений или отображаемого содержимого.
 
-Расширение не передаёт данные пользователя на сервер разработчика и не добавляет запросы аналитики, телеметрии, рекламы или отслеживания.
+Некоторые ответы сервисов могут содержать ссылки на изображения или файлы, размещённые на внешних сайтах. Если Расширение умеет сохранять такой материал локально, оно может напрямую запросить указанный HTTPS-адрес, чтобы включить локальную копию в экспорт. Такой запрос выполняется браузером пользователя к соответствующему сайту; поэтому этому сайту могут быть доступны обычные сетевые данные запроса, например IP-адрес пользователя.
 
-Использование ChatGPT регулируется собственными условиями и политикой конфиденциальности OpenAI.
+Расширение не передаёт содержимое бесед на сервер разработчика и не добавляет запросы аналитики, телеметрии, рекламы или отслеживания.
+
+Использование каждого поддерживаемого сервиса регулируется его собственными условиями и политикой конфиденциальности.
 
 ## Передача и раскрытие данных
 
 Разработчик не получает, не продаёт, не сдаёт в аренду, не передаёт и не раскрывает содержимое бесед, данные аутентификации, историю посещений или экспортированные файлы пользователя.
 
-Расширение не использует данные для рекламы, профилирования, оценки кредитоспособности, кредитования или любых целей, не связанных с его единственной функцией экспорта. Расширение не предоставляет людям доступ к данным пользователя.
+Расширение не использует данные для рекламы, профилирования, оценки кредитоспособности, кредитования или любых целей, не связанных с функцией экспорта. Расширение не предоставляет людям доступ к данным пользователя.
+
+Прямые запросы к серверам поддерживаемых сервисов или к внешним адресам медиа выполняются только для получения содержимого, которое пользователь запросил для экспорта; соответствующие сайты обрабатывают такие запросы по собственным правилам.
 
 ## Хранение и удаление
 
@@ -119,6 +133,8 @@ https://github.com/alexey-sirotin/chatgpt-export-md-html/issues
 ## Безопасность
 
 Сетевые запросы Расширения используют HTTPS. Обработка данных и создание архива происходят локально в браузере.
+
+Авторизация в сервисах используется только через уже существующий сеанс пользователя. Данные аутентификации не копируются в экспортируемые файлы или хранилище под управлением разработчика.
 
 ## Ограниченное использование Chrome Web Store
 
@@ -132,4 +148,4 @@ https://github.com/alexey-sirotin/chatgpt-export-md-html/issues
 
 Вопросы и обращения по поводу конфиденциальности можно оставить в публичном трекере проекта:
 
-https://github.com/alexey-sirotin/chatgpt-export-md-html/issues
+https://github.com/alexey-sirotin/ai-chat-export/issues
