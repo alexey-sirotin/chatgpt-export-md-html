@@ -101,7 +101,7 @@ function renderedSvg(result) {
 
 function mermaidStyle() {
   return `
-  .mermaid-block { margin: 1em 0; overflow-x: auto; overflow-y: hidden; text-align: center; }
+  .mermaid-block { margin: 1em 0; padding: 12px; overflow-x: auto; overflow-y: hidden; text-align: center; color-scheme: light; background: #fff; border-radius: 8px; }
   .mermaid-block svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
   @media print { .mermaid-block { break-inside: avoid; overflow: visible; } }`;
 }
