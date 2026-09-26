@@ -43,6 +43,14 @@ copy_tracked_files() {
 copy_tracked_files "$CHROMIUM"
 copy_tracked_files "$FIREFOX"
 
+# Working-tree builds keep the normalized JSON export for diagnostics. Release
+# packages deliberately disable it so Markdown and HTML are the public formats.
+for target in "$CHROMIUM" "$FIREFOX"; do
+  cat > "$target/build-mode.js" <<'EOF'
+export const INCLUDE_DEBUG_JSON = false;
+EOF
+done
+
 python3 - "$CHROMIUM/manifest.json" "$FIREFOX/manifest.json" <<'PY'
 import copy
 import json
