@@ -1,5 +1,5 @@
 {
-  "name": "chatgpt-export-md-html",
+  "name": "ai-chat-export",
   "private": true,
   "type": "module",
   "scripts": {
