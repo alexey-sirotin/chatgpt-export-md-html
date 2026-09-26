@@ -1,6 +1,6 @@
 # AI Chat Export
 
-A browser extension for exporting conversations from **ChatGPT, Claude, Grok, and DeepSeek** to local Markdown, HTML, and JSON files, with optional local copies of attachments.
+A browser extension for exporting conversations from **ChatGPT, Claude, Grok, and DeepSeek** to local Markdown and HTML files, with optional local copies of attachments.
 
 Current version: **0.1.37**
 
@@ -18,13 +18,13 @@ The extension uses a shared export pipeline with provider-specific conversation,
 - Export the current active conversation branch from ChatGPT, Claude, Grok, or DeepSeek.
 - Export all messages or select individual messages directly in the provider UI.
 - Shift-click range selection for currently represented messages.
-- Enable Markdown, HTML, and JSON independently.
+- Enable Markdown and HTML independently.
 - Save supported uploads, generated images, audio, files, and provider-generated artifacts locally.
 - Preserve original attachment filenames when the provider supplies them.
 - Keep images clickable in Markdown and HTML.
-- Preserve message date/time when available; JSON uses UTC timestamps.
-- Optionally omit the original conversation link from Markdown, HTML, and JSON.
-- Mark omitted beginning, internal gaps, and omitted end in partial Markdown/HTML exports; JSON carries matching omission metadata.
+- Preserve message date/time when available.
+- Optionally omit the original conversation link from Markdown and HTML.
+- Mark omitted beginning, internal gaps, and omitted end in partial Markdown/HTML exports.
 - Optional separate folder for attachments.
 - Long-export progress survives closing and reopening the extension popup.
 - Cancel a long-running export without losing the current message selection.
@@ -67,7 +67,7 @@ The release archive is already packaged for Firefox; users do not need to run `s
 1. Open a supported conversation in ChatGPT, Claude, Grok, or DeepSeek.
 2. Click the extension button.
 3. Optionally change the export filename and display names.
-4. Choose Markdown, HTML, and/or JSON.
+4. Choose Markdown and/or HTML.
 5. Choose whether the original conversation link should be included.
 6. Choose whether attachments should be downloaded and whether they should be placed in a separate folder.
 7. Export the whole current branch, or enable message selection and choose only the messages you need.
@@ -79,7 +79,6 @@ A typical export looks like this:
 My export.zip
 ├── My export.md
 ├── My export.html
-├── My export.json
 └── My export/
     ├── image.png
     ├── photo.jpg
@@ -95,7 +94,7 @@ The extension exports the provider's **currently active linear branch** where th
 
 The editable export name controls the ZIP filename, exported document filenames, and attachment directory name. The heading inside Markdown and HTML uses the conversation title reported by the provider when available.
 
-Partial exports insert neutral omission markers at the beginning, between non-contiguous selected fragments, and at the end when appropriate. JSON records the same structure with `omittedBefore` and `omittedAfter` flags.
+Partial exports insert neutral omission markers at the beginning, between non-contiguous selected fragments, and at the end when appropriate.
 
 When attachment saving is disabled, Markdown and HTML still use the resolved attachment filenames and folder paths that would be used by a normal downloaded export; only the attachment bytes are omitted from the ZIP.
 
@@ -160,6 +159,7 @@ scripts/package-smoke.py       Release-package content and manifest smoke test
 async-pool.js                  Small bounded-concurrency worker pool
 attachments.js                 Shared attachment discovery/normalization helpers
 background.js                  Export orchestration, selection cache and download lifecycle
+build-mode.js                  Development/release feature switches
 platform.js                    Provider registry and adapter selection
 chatgpt-*.js                   ChatGPT API, normalization and selection
 claude-*.js                    Claude API, normalization, selection and visual capture
@@ -207,7 +207,7 @@ npm test
 
 For local Chromium development, edit the files in the repository and click **Reload** for the extension on `chrome://extensions`. Refresh the open provider page after changes to its content scripts.
 
-Unpacked development installs expose an attachment-concurrency selector (1–10, default 3) for testing. Normal packaged/store installs hide this selector and use 10 concurrent attachment downloads.
+Working-tree development builds automatically include the normalized internal JSON snapshot in every export for diagnostics. Packaged Chromium/Firefox releases do not expose or generate this JSON file. Unpacked development installs also expose an attachment-concurrency selector (1–10, default 3); normal packaged/store installs use 10 concurrent attachment downloads.
 
 To build browser-specific archives locally on a Unix-like environment:
 
@@ -219,7 +219,7 @@ The resulting archives are written to `dist/`.
 
 For release packaging, pushing a tag such as `v0.1.38` runs the GitHub Actions packaging workflow. The workflow verifies that the tag matches the version in `manifest.json`, builds both browser archives, and creates a **draft GitHub Release** with both ZIP files attached. The draft can then be reviewed and published manually.
 
-Pull requests also run the packaging workflow as a validation check. After both browser ZIPs are built, a smoke test verifies their file allowlist and browser-specific manifest rules before the packages are exposed as a workflow artifact.
+Pull requests also run the packaging workflow as a validation check. After both browser ZIPs are built, a smoke test verifies their file allowlist, release feature switches, and browser-specific manifest rules before the packages are exposed as a workflow artifact.
 
 ## License
 
