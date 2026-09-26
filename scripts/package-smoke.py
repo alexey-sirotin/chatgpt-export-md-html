@@ -10,6 +10,7 @@ COMMON_ROOT_FILES = {
     "async-pool.js",
     "attachments.js",
     "background.js",
+    "build-mode.js",
     "chatgpt-api.js",
     "chatgpt-normalize.js",
     "chatgpt-selection.js",
@@ -165,6 +166,17 @@ def read_manifest(archive):
             fail(f"{archive.name} has invalid manifest.json: {exc}")
 
 
+def check_release_build_mode(archive):
+    with ZipFile(archive) as zf:
+        try:
+            source = zf.read("build-mode.js").decode("utf-8")
+        except KeyError:
+            fail(f"{archive.name} is missing build-mode.js")
+
+    if "INCLUDE_DEBUG_JSON = false" not in source:
+        fail(f"{archive.name} must disable debug JSON export")
+
+
 def check_common_manifest(source, packaged, archive):
     for key in ("manifest_version", "name", "version", "description", "action", "content_scripts"):
         if packaged.get(key) != source.get(key):
@@ -244,6 +256,7 @@ def main():
             fail(f"missing archive: {archive}")
 
         check_file_set(browser, archive)
+        check_release_build_mode(archive)
         packaged_manifest = read_manifest(archive)
 
         if browser == "chromium":
