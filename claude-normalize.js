@@ -85,11 +85,52 @@ function extractClaudeContent(message, data) {
   return { textParts, attachments };
 }
 
+function activeBranchIndexByMessageId(data) {
+  const byId = new Map((data?.chat_messages || []).map(message => [message.uuid, message]));
+  const ids = [];
+  const seen = new Set();
+  let id = data?.current_leaf_message_uuid || "";
+
+  while (id && !seen.has(id)) {
+    seen.add(id);
+    const message = byId.get(id);
+    if (!message) break;
+    ids.push(id);
+
+    const parent = message.parent_message_uuid;
+    if (!parent || parent === "00000000-0000-4000-8000-000000000000") break;
+    id = parent;
+  }
+
+  ids.reverse();
+  return new Map(ids.map((messageId, index) => [messageId, index]));
+}
+
+function customVisualAttachments(data, messageId, activeIndexById) {
+  const rowIndex = activeIndexById.get(messageId);
+  if (!Number.isInteger(rowIndex)) return [];
+
+  return (data?.__customVisuals || [])
+    .filter(item => item?.rowIndex === rowIndex && typeof item.svg === "string" && item.svg)
+    .map((item, index) => ({
+      source: "claude-custom-visual",
+      id: `claude-visual:${messageId}:${index}`,
+      originalName: `claude-visual-${rowIndex + 1}-${index + 1}.svg`,
+      mimeType: "image/svg+xml",
+      width: item.width || null,
+      height: item.height || null,
+      isImage: true,
+      __inlineSvg: item.svg
+    }));
+}
+
 export function normalizeClaudeConversation(data, branch, omission = {}) {
   const messages = [];
+  const activeIndexById = activeBranchIndexByMessageId(data);
 
   for (const message of branch || []) {
     const { textParts, attachments } = extractClaudeContent(message, data);
+    attachments.push(...customVisualAttachments(data, message.uuid, activeIndexById));
     if (!textParts.length && !attachments.length) continue;
 
     const role = message.sender === "human" ? "user" : "assistant";
