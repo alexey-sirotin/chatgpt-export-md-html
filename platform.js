@@ -10,11 +10,11 @@ import {
   selectChatGPTBranch
 } from "./chatgpt-selection.js";
 import {
-  getClaudeConversationInPage,
   downloadClaudeAttachmentInPage,
   abortClaudeExportInPage,
   clearClaudeExportAbortInPage
 } from "./claude-api.js";
+import { getClaudeConversationWithVisualsInPage } from "./claude-visual-capture.js";
 import { normalizeClaudeConversation } from "./claude-normalize.js";
 import {
   buildClaudeSelectionIndex,
@@ -92,7 +92,7 @@ export const claudePlatform = {
     return data?.uuid || "";
   },
 
-  getConversationInPage: getClaudeConversationInPage,
+  getConversationInPage: getClaudeConversationWithVisualsInPage,
   buildSelectionIndex: buildClaudeSelectionIndex,
   selectBranch: selectClaudeBranch,
   downloadAttachmentInPage: downloadClaudeAttachmentInPage,
