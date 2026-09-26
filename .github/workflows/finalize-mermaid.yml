@@ -42,23 +42,12 @@ jobs:
               json.dumps(package, ensure_ascii=False, indent=2) + '\n',
               encoding='utf-8'
           )
-
-          workflow_path = Path('.github/workflows/package.yml')
-          workflow = workflow_path.read_text(encoding='utf-8')
-          workflow = workflow.replace(
-              '      - name: Verify vendored KaTeX runtime\n'
-              '        run: git diff --exit-code -- vendor/katex.mjs vendor/KATEX-LICENSE.txt\n',
-              '      - name: Verify vendored renderer runtimes\n'
-              '        run: git diff --exit-code -- vendor/katex.mjs vendor/KATEX-LICENSE.txt vendor/mermaid.min.js vendor/MERMAID-LICENSE.txt\n'
-          )
-          workflow_path.write_text(workflow, encoding='utf-8')
           PY
 
           rm -f scripts/apply-mermaid-feature.mjs
-          rm -f .github/workflows/finalize-mermaid.yml
 
           git config user.name "Morgana Hartwell"
           git config user.email "morgana.hartwell@gmail.com"
-          git add -A
+          git add background.js package.json scripts/package-smoke.py scripts/apply-mermaid-feature.mjs vendor/mermaid.min.js vendor/MERMAID-LICENSE.txt
           git commit -m "chore: finalize Mermaid rendering integration"
           git push origin HEAD:add-mermaid-rendering
