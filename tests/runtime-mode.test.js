@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  effectiveInstallType,
   getInstallType,
   resolveAttachmentDownloadConcurrency
 } from "../runtime-mode.js";
+
+describe("effectiveInstallType", () => {
+  it("keeps development installs only for development source builds", () => {
+    expect(effectiveInstallType("development", true)).toBe("development");
+    expect(effectiveInstallType("development", false)).toBeNull();
+  });
+});
 
 describe("getInstallType", () => {
   it("returns the extension install type", async () => {

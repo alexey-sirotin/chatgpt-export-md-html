@@ -1,5 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { normalizeChatGPTConversation } from "../chatgpt-normalize.js";
+import {
+  normalizeChatGPTConversation,
+  normalizeChatGPTMarkdownMath
+} from "../chatgpt-normalize.js";
+
+describe("normalizeChatGPTMarkdownMath", () => {
+  it("converts ChatGPT math delimiters to portable Markdown dollar syntax", () => {
+    const source = [
+      "Inline: \\(E = mc^2\\)",
+      "",
+      "\\[",
+      "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}",
+      "\\]"
+    ].join("\n");
+
+    const normalized = normalizeChatGPTMarkdownMath(source);
+
+    expect(normalized).toContain("Inline: $E = mc^2$");
+    expect(normalized).toContain([
+      "$$",
+      "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}",
+      "$$"
+    ].join("\n"));
+  });
+
+  it("does not rewrite math-like delimiters inside code", () => {
+    const source = [
+      "Literal `\\(x\\)` stays code.",
+      "",
+      "```text",
+      "\\[",
+      "x^2",
+      "\\]",
+      "```"
+    ].join("\n");
+
+    expect(normalizeChatGPTMarkdownMath(source)).toBe(source);
+  });
+});
 
 describe("normalizeChatGPTConversation", () => {
   it("normalizes visible ChatGPT branch nodes into provider-neutral messages", () => {
@@ -63,6 +101,26 @@ describe("normalizeChatGPTConversation", () => {
       omittedAfter: true,
       content: [{ type: "text", text: "**Hi**", format: "markdown" }]
     });
+  });
+
+  it("normalizes ChatGPT math delimiters in message content", () => {
+    const node = {
+      parent: "u1",
+      message: {
+        id: "a-math",
+        author: { role: "assistant" },
+        create_time: 1757930002,
+        content: { parts: ["Energy: \\(E=mc^2\\)\n\n\\[x^2\\]"] },
+        metadata: {}
+      }
+    };
+
+    const normalized = normalizeChatGPTConversation(
+      { conversation_id: "conv-math", safe_urls: [] },
+      [node]
+    );
+
+    expect(normalized.messages[0].content[0].text).toBe("Energy: $E=mc^2$\n\n$$x^2$$");
   });
 
   it("adds sandbox download context during normalization", () => {
