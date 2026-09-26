@@ -1,6 +1,45 @@
 import { getClaudeConversationInPage as getClaudeConversationBaseInPage } from "./claude-api.js";
 
-const CAPTURE_KEY = "__chatgptExportClaudeVisualCaptureV2";
+const CAPTURE_KEY = "__chatgptExportClaudeVisualCaptureV3";
+const SHOW_WIDGET_TOOL = "visualize:show_widget";
+
+function activeBranchMessages(data) {
+  const byId = new Map((data?.chat_messages || []).map(message => [message.uuid, message]));
+  const messages = [];
+  const seen = new Set();
+  let id = data?.current_leaf_message_uuid || "";
+
+  while (id && !seen.has(id)) {
+    seen.add(id);
+    const message = byId.get(id);
+    if (!message) break;
+    messages.push(message);
+
+    const parent = message.parent_message_uuid;
+    if (!parent || parent === "00000000-0000-4000-8000-000000000000") break;
+    id = parent;
+  }
+
+  return messages.reverse();
+}
+
+export function claudeCustomVisualTargets(data) {
+  return activeBranchMessages(data)
+    .map((message, rowIndex) => {
+      const blocks = Array.isArray(message?.content) ? message.content : [];
+      const toolUses = blocks.filter(block =>
+        block?.type === "tool_use" &&
+        block?.name === SHOW_WIDGET_TOOL &&
+        block?.is_mcp_app !== false
+      ).length;
+      const toolResults = blocks.filter(block =>
+        block?.type === "tool_result" && block?.name === SHOW_WIDGET_TOOL
+      ).length;
+      const count = toolUses || toolResults;
+      return count > 0 ? { rowIndex, count } : null;
+    })
+    .filter(Boolean);
+}
 
 function mergeVisuals(existing = [], captured = []) {
   if (!captured.length) return existing;
@@ -22,7 +61,8 @@ function mergeVisuals(existing = [], captured = []) {
     .map(({ visualIndex, ...visual }) => visual);
 }
 
-async function captureClaudeCustomVisuals(tabId) {
+async function captureClaudeCustomVisuals(tabId, targets) {
+  if (!targets.length) return [];
   const token = crypto.randomUUID();
 
   const captureRound = async () => {
@@ -114,7 +154,7 @@ async function captureClaudeCustomVisuals(tabId) {
         }
 
         window.parent.postMessage({
-          type: "chatgpt-export-claude-visual-v2",
+          type: "chatgpt-export-claude-visual-v3",
           token,
           svg: new XMLSerializer().serializeToString(clone),
           width: source.rect.width,
@@ -125,32 +165,6 @@ async function captureClaudeCustomVisuals(tabId) {
     });
   };
 
-  const scrollRow = async (rowIndex, delayMs) => {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      args: [CAPTURE_KEY, token, rowIndex, delayMs],
-      func: async (registryKey, token, rowIndex, delayMs) => {
-        const state = globalThis[registryKey];
-        if (!state || state.token !== token) return false;
-
-        // Re-query the live row every time. Claude can replace an offscreen
-        // transcript row/iframe while keeping the same data-index, so retaining
-        // element references across awaits can silently scroll a detached node.
-        const row = document.querySelector(
-          `[data-testid="transcript-row"][data-index="${rowIndex}"]`
-        );
-        if (!row) return false;
-
-        row.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        return true;
-      }
-    });
-    return result === true;
-  };
-
   const missingRows = async () => {
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -159,10 +173,106 @@ async function captureClaudeCustomVisuals(tabId) {
       func: (registryKey, token) => {
         const state = globalThis[registryKey];
         if (!state || state.token !== token) return [];
-        return state.rows.filter(rowIndex => !state.capturedRows.has(rowIndex));
+
+        return state.targets
+          .filter(target => {
+            let count = 0;
+            for (const visual of state.visuals.values()) {
+              if (visual.rowIndex === target.rowIndex) count++;
+            }
+            return count < target.count;
+          })
+          .map(target => target.rowIndex);
       }
     });
     return Array.isArray(result) ? result : [];
+  };
+
+  const bringRowIntoView = async (rowIndex, settleMs) => {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      args: [CAPTURE_KEY, token, rowIndex, settleMs],
+      func: async (registryKey, token, rowIndex, settleMs) => {
+        const state = globalThis[registryKey];
+        if (!state || state.token !== token) return false;
+
+        const selector = `[data-testid="transcript-row"][data-index="${rowIndex}"]`;
+        const mountedRows = () => [...document.querySelectorAll('[data-testid="transcript-row"][data-index]')]
+          .map(row => ({ row, index: Number(row.getAttribute("data-index")) }))
+          .filter(item => Number.isInteger(item.index))
+          .sort((a, b) => a.index - b.index);
+
+        const scrollingAncestor = element => {
+          for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            if (
+              /(?:auto|scroll)/.test(style.overflowY) &&
+              parent.scrollHeight > parent.clientHeight + 1
+            ) return parent;
+          }
+          return document.scrollingElement;
+        };
+
+        const waitFrame = () => new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        );
+
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const row = document.querySelector(selector);
+          if (row) {
+            row.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+            await waitFrame();
+            await new Promise(resolve => setTimeout(resolve, settleMs));
+            return true;
+          }
+
+          const rows = mountedRows();
+          if (!rows.length) return false;
+
+          const first = rows[0];
+          const last = rows[rows.length - 1];
+          let direction;
+          let anchor;
+          if (rowIndex < first.index) {
+            direction = -1;
+            anchor = first;
+          } else if (rowIndex > last.index) {
+            direction = 1;
+            anchor = last;
+          } else {
+            anchor = rows.reduce((best, item) =>
+              Math.abs(item.index - rowIndex) < Math.abs(best.index - rowIndex) ? item : best
+            , rows[0]);
+            direction = rowIndex < anchor.index ? -1 : 1;
+          }
+
+          const scroller = scrollingAncestor(anchor.row);
+          if (!scroller) return false;
+
+          const viewport = scroller === document.scrollingElement
+            ? window.innerHeight
+            : scroller.clientHeight;
+          const step = Math.max(450, Math.round(viewport * 1.6));
+          const before = scroller.scrollTop;
+          scroller.scrollTop = before + direction * step;
+
+          if (scroller.scrollTop === before) {
+            anchor.row.scrollIntoView({
+              block: direction < 0 ? "start" : "end",
+              inline: "nearest",
+              behavior: "auto"
+            });
+          }
+
+          await waitFrame();
+          await new Promise(resolve => setTimeout(resolve, 90));
+        }
+
+        return false;
+      }
+    });
+    return result === true;
   };
 
   const finish = async () => {
@@ -180,6 +290,9 @@ async function captureClaudeCustomVisuals(tabId) {
             item.element.scrollTop = item.top;
           } catch {}
         }
+        try {
+          window.scrollTo(state.windowPosition.left, state.windowPosition.top);
+        } catch {}
 
         const out = [...state.visuals.values()]
           .sort((a, b) => a.rowIndex - b.rowIndex || a.visualIndex - b.visualIndex);
@@ -195,8 +308,8 @@ async function captureClaudeCustomVisuals(tabId) {
     const [{ result: setup }] = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      args: [CAPTURE_KEY, token],
-      func: (registryKey, token) => {
+      args: [CAPTURE_KEY, token, targets],
+      func: (registryKey, token, targets) => {
         const old = globalThis[registryKey];
         if (old?.handler) window.removeEventListener("message", old.handler);
 
@@ -212,20 +325,11 @@ async function captureClaudeCustomVisuals(tabId) {
           }
         };
 
-        const rows = [...new Set(
-          [...document.querySelectorAll("iframe")]
-            .filter(isMcpFrame)
-            .map(frame => Number(frame.closest('[data-testid="transcript-row"][data-index]')?.dataset.index))
-            .filter(Number.isInteger)
-        )].sort((a, b) => a - b);
-
         const scrollPositions = [];
         const seen = new Set();
-        for (const rowIndex of rows) {
-          const row = document.querySelector(
-            `[data-testid="transcript-row"][data-index="${rowIndex}"]`
-          );
-          for (let parent = row?.parentElement; parent; parent = parent.parentElement) {
+        const mounted = [...document.querySelectorAll('[data-testid="transcript-row"][data-index]')];
+        for (const row of mounted) {
+          for (let parent = row.parentElement; parent; parent = parent.parentElement) {
             const style = getComputedStyle(parent);
             if (
               /(?:auto|scroll)/.test(style.overflowY) &&
@@ -233,10 +337,15 @@ async function captureClaudeCustomVisuals(tabId) {
               !seen.has(parent)
             ) {
               seen.add(parent);
-              scrollPositions.push({ element: parent, left: parent.scrollLeft, top: parent.scrollTop });
+              scrollPositions.push({
+                element: parent,
+                left: parent.scrollLeft,
+                top: parent.scrollTop
+              });
             }
           }
         }
+
         const scrollingElement = document.scrollingElement;
         if (scrollingElement && !seen.has(scrollingElement)) {
           scrollPositions.push({
@@ -248,10 +357,10 @@ async function captureClaudeCustomVisuals(tabId) {
 
         const state = {
           token,
-          rows,
+          targets,
           visuals: new Map(),
-          capturedRows: new Set(),
           scrollPositions,
+          windowPosition: { left: window.scrollX, top: window.scrollY },
           handler: null
         };
 
@@ -259,59 +368,52 @@ async function captureClaudeCustomVisuals(tabId) {
           const data = event?.data;
           if (
             !data ||
-            data.type !== "chatgpt-export-claude-visual-v2" ||
+            data.type !== "chatgpt-export-claude-visual-v3" ||
             data.token !== token ||
             !data.svg
           ) return;
 
-          // Resolve the current iframe and row at message time instead of using
-          // setup-time element references. Claude may replace either one when a
-          // dormant MCP widget rehydrates after scrolling into view.
           const frames = [...document.querySelectorAll("iframe")].filter(isMcpFrame);
           const frame = frames.find(candidate => candidate.contentWindow === event.source);
           const row = frame?.closest?.('[data-testid="transcript-row"][data-index]');
           const rowIndex = Number(row?.getAttribute("data-index"));
           if (!Number.isInteger(rowIndex)) return;
+          if (!state.targets.some(target => target.rowIndex === rowIndex)) return;
 
           const siblings = [...(row?.querySelectorAll("iframe") || [])].filter(isMcpFrame);
           const visualIndex = Math.max(0, siblings.indexOf(frame));
-          const key = `${rowIndex}:${visualIndex}`;
-          state.visuals.set(key, {
+          state.visuals.set(`${rowIndex}:${visualIndex}`, {
             rowIndex,
             visualIndex,
             svg: data.svg,
             width: Number(data.width) || null,
             height: Number(data.height) || null
           });
-          state.capturedRows.add(rowIndex);
         };
 
         globalThis[registryKey] = state;
         window.addEventListener("message", state.handler);
-        return { rows, expectedCount: rows.length };
+        return { expectedCount: targets.reduce((sum, target) => sum + target.count, 0) };
       }
     });
 
     if (!setup?.expectedCount) return await finish();
 
     await captureRound();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 120));
 
-    // Walk missing widget rows in transcript order. Claude only activates some
-    // MCP apps after the row actually enters the viewport; jumping over a row
-    // (for example with Home) is not enough to initialize its SVG.
     for (const rowIndex of await missingRows()) {
-      for (const delayMs of [700, 1200]) {
-        if (!(await scrollRow(rowIndex, delayMs))) break;
+      for (const settleMs of [800, 1400]) {
+        if (!(await bringRowIntoView(rowIndex, settleMs))) break;
         await captureRound();
-        await new Promise(resolve => setTimeout(resolve, 120));
+        await new Promise(resolve => setTimeout(resolve, 150));
         if (!(await missingRows()).includes(rowIndex)) break;
       }
     }
 
     return await finish();
   } catch (error) {
-    console.warn("chatgpt-export-md-html: robust Claude visual capture failed", error);
+    console.warn("chatgpt-export-md-html: Claude visual capture failed", error);
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
@@ -336,7 +438,8 @@ async function captureClaudeCustomVisuals(tabId) {
 
 export async function getClaudeConversationWithVisualsInPage(tabId, exportId = null) {
   const data = await getClaudeConversationBaseInPage(tabId, exportId);
-  const captured = await captureClaudeCustomVisuals(tabId);
+  const targets = claudeCustomVisualTargets(data);
+  const captured = await captureClaudeCustomVisuals(tabId, targets);
   const merged = mergeVisuals(data?.__customVisuals || [], captured);
   return merged.length ? { ...data, __customVisuals: merged } : data;
 }
