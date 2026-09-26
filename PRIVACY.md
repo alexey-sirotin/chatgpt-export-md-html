@@ -25,7 +25,7 @@ Authentication information is not written to extension storage or included in ex
 
 ## How data is used
 
-Conversation data and attachments are used only to create the Markdown, HTML, JSON, SVG/image, and ZIP files requested by the user.
+Conversation data and attachments are used only to create the Markdown, HTML, SVG/image, and ZIP files requested by the user.
 
 Preferences may be stored in the browser's extension storage so that the Extension can remember the user's choices. Temporary progress, filename draft, and selection-cache data may be stored in session storage to support the current browser session.
 
@@ -102,7 +102,7 @@ https://github.com/alexey-sirotin/ai-chat-export/issues
 
 ## Как используются данные
 
-Содержимое беседы и вложения используются только для создания запрошенных пользователем файлов Markdown, HTML, JSON, SVG/изображений и ZIP.
+Содержимое беседы и вложения используются только для создания запрошенных пользователем файлов Markdown, HTML, SVG/изображений и ZIP.
 
 Настройки могут храниться в локальном хранилище расширений браузера, чтобы Расширение запоминало выбор пользователя. Временные данные о ходе экспорта, черновике имени файла и кеше выбора сообщений могут храниться в хранилище текущего сеанса браузера.
 
