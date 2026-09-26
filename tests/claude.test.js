@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeClaudeConversation } from "../claude-normalize.js";
+import { claudeCustomVisualTargets } from "../claude-visual-capture.js";
 import {
   buildClaudeSelectionIndex,
   claudeActiveBranch,
@@ -56,6 +57,60 @@ describe("Claude branch and selection", () => {
     expect(selected.branch.map(item => item.uuid)).toEqual(["a1", "a2"]);
     expect(selected.omission.omittedAtStart).toBe(true);
     expect(selected.omission.beforeIds.has("a2")).toBe(true);
+  });
+});
+
+describe("Claude custom visual discovery", () => {
+  const root = "00000000-0000-4000-8000-000000000000";
+
+  it("finds visualize:show_widget rows from the active API branch", () => {
+    const u1 = message("u1", "human", root);
+    const a1 = message("a1", "assistant", "u1", [
+      { type: "tool_use", name: "visualize:read_me", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:read_me", content: [] },
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:show_widget", content: [] },
+      { type: "text", text: "First visual" }
+    ]);
+    const u2 = message("u2", "human", "a1");
+    const inactive = message("inactive", "assistant", "u2", [
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true }
+    ]);
+    const a2 = message("a2", "assistant", "u2", [
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:show_widget", content: [] },
+      { type: "text", text: "Second visual" }
+    ]);
+
+    expect(claudeCustomVisualTargets({
+      current_leaf_message_uuid: "a2",
+      chat_messages: [u1, a1, u2, inactive, a2]
+    })).toEqual([
+      { rowIndex: 1, count: 1 },
+      { rowIndex: 3, count: 1 }
+    ]);
+  });
+
+  it("counts multiple show_widget calls in one message and falls back to tool_result", () => {
+    const u1 = message("u1", "human", root);
+    const a1 = message("a1", "assistant", "u1", [
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_use", name: "visualize:show_widget", is_mcp_app: true },
+      { type: "tool_result", name: "visualize:show_widget", content: [] },
+      { type: "tool_result", name: "visualize:show_widget", content: [] }
+    ]);
+    const u2 = message("u2", "human", "a1");
+    const a2 = message("a2", "assistant", "u2", [
+      { type: "tool_result", name: "visualize:show_widget", content: [] }
+    ]);
+
+    expect(claudeCustomVisualTargets({
+      current_leaf_message_uuid: "a2",
+      chat_messages: [u1, a1, u2, a2]
+    })).toEqual([
+      { rowIndex: 1, count: 2 },
+      { rowIndex: 3, count: 1 }
+    ]);
   });
 });
 
@@ -141,5 +196,67 @@ describe("normalizeClaudeConversation", () => {
       mimeType: "image/jpeg",
       isImage: true
     });
+  });
+
+  it("attaches captured MCP custom visuals to the matching active-branch row", () => {
+    const root = "00000000-0000-4000-8000-000000000000";
+    const user = message("u1", "human", root);
+    const assistant = message("a1", "assistant", "u1", [
+      { type: "text", text: "Visible reply with a custom visual" }
+    ]);
+    const svg = '<svg viewBox="0 0 680 200"><rect width="680" height="200"/></svg>';
+    const data = {
+      uuid: "conv-visual",
+      name: "Claude visual test",
+      current_leaf_message_uuid: "a1",
+      chat_messages: [user, assistant],
+      __customVisuals: [{ rowIndex: 1, svg, width: 422, height: 124 }]
+    };
+
+    const normalized = normalizeClaudeConversation(data, [assistant]);
+    const attachment = normalized.messages[0].attachments[0];
+
+    expect(attachment).toMatchObject({
+      source: "claude-custom-visual",
+      id: "claude-visual:a1:0",
+      originalName: "claude-visual-2-1.svg",
+      mimeType: "image/svg+xml",
+      width: 422,
+      height: 124,
+      isImage: true
+    });
+    expect(attachment.__inlineSvg).toBe(svg);
+    expect(JSON.stringify(attachment)).not.toContain("<svg");
+  });
+
+  it("keeps custom visuals attached to separate assistant messages", () => {
+    const root = "00000000-0000-4000-8000-000000000000";
+    const u1 = message("u1", "human", root);
+    const a1 = message("a1", "assistant", "u1", [{ type: "text", text: "First visual" }]);
+    const u2 = message("u2", "human", "a1");
+    const a2 = message("a2", "assistant", "u2", [{ type: "text", text: "Second visual" }]);
+    const data = {
+      uuid: "conv-two-visuals",
+      current_leaf_message_uuid: "a2",
+      chat_messages: [u1, a1, u2, a2],
+      __customVisuals: [
+        { rowIndex: 1, svg: '<svg id="first"/>', width: 400, height: 120 },
+        { rowIndex: 3, svg: '<svg id="second"/>', width: 420, height: 140 }
+      ]
+    };
+
+    const normalized = normalizeClaudeConversation(data, [a1, a2]);
+
+    expect(normalized.messages).toHaveLength(2);
+    expect(normalized.messages[0].attachments[0]).toMatchObject({
+      id: "claude-visual:a1:0",
+      originalName: "claude-visual-2-1.svg"
+    });
+    expect(normalized.messages[0].attachments[0].__inlineSvg).toContain('id="first"');
+    expect(normalized.messages[1].attachments[0]).toMatchObject({
+      id: "claude-visual:a2:0",
+      originalName: "claude-visual-4-1.svg"
+    });
+    expect(normalized.messages[1].attachments[0].__inlineSvg).toContain('id="second"');
   });
 });

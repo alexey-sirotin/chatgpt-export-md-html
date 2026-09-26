@@ -17,6 +17,7 @@ COMMON_ROOT_FILES = {
     "claude-content.js",
     "claude-normalize.js",
     "claude-selection.js",
+    "claude-visual-capture.js",
     "deepseek-api.js",
     "deepseek-content.js",
     "deepseek-normalize.js",
