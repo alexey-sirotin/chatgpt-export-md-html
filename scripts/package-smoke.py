@@ -33,6 +33,9 @@ COMMON_ROOT_FILES = {
     "download-url.js",
     "manifest.json",
     "math-render.js",
+    "mermaid-html.js",
+    "mermaid-runtime.js",
+    "mermaid-service.js",
     "ordered-selection.js",
     "popup.html",
     "platform.js",
@@ -44,7 +47,9 @@ COMMON_ROOT_FILES = {
     "selection-matcher.js",
     "utils.js",
     "vendor/KATEX-LICENSE.txt",
+    "vendor/MERMAID-LICENSE.txt",
     "vendor/katex.mjs",
+    "vendor/mermaid.min.js",
     "zip.js",
 }
 

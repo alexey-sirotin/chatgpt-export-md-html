@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/prepare-katex.mjs && node scripts/prepare-mermaid.mjs && node scripts/apply-mermaid-feature.mjs",
+    "postinstall": "node scripts/prepare-katex.mjs && node scripts/prepare-mermaid.mjs",
     "test": "vitest run",
     "test:package": "python3 scripts/package-smoke.py"
   },

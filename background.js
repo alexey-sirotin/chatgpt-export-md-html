@@ -25,6 +25,8 @@ import {
   resolveAttachmentDownloadConcurrency
 } from "./runtime-mode.js";
 import { buildMarkdownExport, buildHtmlExport } from "./render.js";
+import { prepareMessagesForMermaid, applyMermaidRenderings } from "./mermaid-html.js";
+import { renderMermaidSources } from "./mermaid-service.js";
 import { makeZip } from "./zip.js";
 import {
   createDownloadObjectUrl,
@@ -725,12 +727,30 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       files.push({ name: `${exportName}.md`, bytes: enc(markdown) });
     }
     if (exportHtml) {
-      const html = buildHtmlExport({
-        title: conversationTitle,
-        conversationUrl,
-        messages: jsonMessages,
-        includeOriginalLink
-      });
+      const mermaidPlan = prepareMessagesForMermaid(jsonMessages);
+      let mermaidRenderings = [];
+      if (mermaidPlan.blocks.length) {
+        try {
+          mermaidRenderings = await renderMermaidSources(
+            mermaidPlan.blocks.map(block => block.source)
+          );
+        } catch (error) {
+          console.warn("chatgpt-export-md-html: Mermaid rendering failed; keeping source blocks", error);
+          mermaidRenderings = mermaidPlan.blocks.map(() => null);
+        }
+        throwIfAborted(signal, t("exportCanceled"));
+      }
+
+      const html = applyMermaidRenderings(
+        buildHtmlExport({
+          title: conversationTitle,
+          conversationUrl,
+          messages: mermaidPlan.messages,
+          includeOriginalLink
+        }),
+        mermaidPlan.blocks,
+        mermaidRenderings
+      );
       files.push({ name: `${exportName}.html`, bytes: enc(html) });
     }
     if (exportJsonEnabled) {
