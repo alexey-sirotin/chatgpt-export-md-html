@@ -1,30 +1,37 @@
-# ChatGPT Export to Markdown & HTML
+# AI Chat Export
 
-A browser extension for exporting the current ChatGPT conversation branch to local Markdown, HTML and JSON files, with attachments saved alongside the export.
+A browser extension for exporting conversations from **ChatGPT, Claude, Grok, and DeepSeek** to local Markdown, HTML, and JSON files, with optional local copies of attachments.
 
 Current version: **0.1.37**
 
+## Supported providers
+
+- ChatGPT — `chatgpt.com`
+- Claude — `claude.ai`
+- Grok — `grok.com`
+- DeepSeek — `chat.deepseek.com`
+
+The extension uses a shared export pipeline with provider-specific conversation, selection, and attachment adapters.
+
 ## Features
 
-- Export the current ChatGPT branch — no full conversation tree.
-- Export all messages or select individual messages directly in the ChatGPT UI.
+- Export the current active conversation branch from ChatGPT, Claude, Grok, or DeepSeek.
+- Export all messages or select individual messages directly in the provider UI.
 - Shift-click range selection for currently represented messages.
-- Markdown, HTML and JSON can be enabled independently.
-- Save user uploads, generated images, audio/files and ChatGPT-created `sandbox:/mnt/data/...` artifacts locally.
-- Preserve original attachment filenames when ChatGPT provides them.
+- Enable Markdown, HTML, and JSON independently.
+- Save supported uploads, generated images, audio, files, and provider-generated artifacts locally.
+- Preserve original attachment filenames when the provider supplies them.
 - Keep images clickable in Markdown and HTML.
-- Resolve ChatGPT web citation markers to normal links.
-- Preserve local message date/time in human-readable exports and UTC timestamps in JSON.
-- Use the original ChatGPT page title inside Markdown/HTML while allowing a separate editable archive name.
-- Keep edited export names as per-conversation session drafts while the popup is closed and reopened.
-- Optionally omit the original ChatGPT conversation link from Markdown, HTML and JSON.
-- Mark omitted beginning, internal gaps and omitted end in partial Markdown/HTML exports; JSON carries matching omission metadata.
+- Preserve message date/time when available; JSON uses UTC timestamps.
+- Optionally omit the original conversation link from Markdown, HTML, and JSON.
+- Mark omitted beginning, internal gaps, and omitted end in partial Markdown/HTML exports; JSON carries matching omission metadata.
 - Optional separate folder for attachments.
 - Long-export progress survives closing and reopening the extension popup.
 - Cancel a long-running export without losing the current message selection.
-- Download up to 10 attachments concurrently in normal installs while preserving deterministic export order.
-- Cache the logical message-selection index for faster popup reopening while keeping export contents authoritative from a fresh conversation fetch.
-- Use Blob/Object URL downloads for large ZIP archives instead of base64 data URLs.
+- Download attachments concurrently while preserving deterministic export order.
+- Use Blob/Object URL downloads for large ZIP archives instead of whole-archive base64 data URLs.
+- Render supported math and Mermaid diagrams in exported HTML.
+- Preserve Claude custom visual widgets as standalone SVG attachments when available.
 - Shared Chromium and Firefox codebase with browser-specific release packaging.
 - English and Russian UI.
 - No external CSS or JavaScript is required by exported HTML.
@@ -35,19 +42,19 @@ There is currently no browser-store release. Ready-to-use browser packages are a
 
 ### Chromium
 
-1. Download `chatgpt-export-md-html-<version>-chromium.zip` from the latest GitHub Release.
+1. Download `ai-chat-export-<version>-chromium.zip` from the latest GitHub Release.
 2. Unpack the archive.
-3. Open `chrome://extensions` in Chrome, Vivaldi or another Chromium-based browser.
+3. Open `chrome://extensions` in Chrome, Vivaldi, or another Chromium-based browser.
 4. Enable **Developer mode**.
 5. Click **Load unpacked** and select the unpacked extension directory.
-6. Open or refresh a conversation on `https://chatgpt.com/`.
+6. Open or refresh a supported conversation.
 7. Click the extension button in the browser toolbar.
 
 ### Firefox
 
 Firefox 140 or later is supported.
 
-1. Download `chatgpt-export-md-html-<version>-firefox.zip` from the latest GitHub Release.
+1. Download `ai-chat-export-<version>-firefox.zip` from the latest GitHub Release.
 2. Unpack the archive.
 3. Open `about:debugging`.
 4. Choose **This Firefox** → **Load Temporary Add-on…**.
@@ -57,11 +64,11 @@ The release archive is already packaged for Firefox; users do not need to run `s
 
 ## Usage
 
-1. Open a ChatGPT conversation.
+1. Open a supported conversation in ChatGPT, Claude, Grok, or DeepSeek.
 2. Click the extension button.
 3. Optionally change the export filename and display names.
-4. Choose Markdown, HTML and/or JSON.
-5. Choose whether the original ChatGPT conversation link should be included.
+4. Choose Markdown, HTML, and/or JSON.
+5. Choose whether the original conversation link should be included.
 6. Choose whether attachments should be downloaded and whether they should be placed in a separate folder.
 7. Export the whole current branch, or enable message selection and choose only the messages you need.
 8. Download the resulting ZIP archive. Long-running exports can be canceled from the popup before completion.
@@ -74,7 +81,7 @@ My export.zip
 ├── My export.html
 ├── My export.json
 └── My export/
-    ├── image-gen-1.png
+    ├── image.png
     ├── photo.jpg
     ├── recording.mp3
     └── generated-file.zip
@@ -84,41 +91,47 @@ Only the formats enabled in the popup are included.
 
 ## Export behavior
 
-The extension exports the **currently selected linear branch** of the conversation. Alternative branches are intentionally not included. If two branches are needed, export them separately.
+The extension exports the provider's **currently active linear branch** where the provider exposes branch semantics. Alternative branches are intentionally not merged into one export. If two branches are needed, export them separately.
 
-The editable export name controls the ZIP filename, exported document filenames and attachment directory name. The heading inside Markdown and HTML uses the original ChatGPT page title, including the project name when available.
+The editable export name controls the ZIP filename, exported document filenames, and attachment directory name. The heading inside Markdown and HTML uses the conversation title reported by the provider when available.
 
 Partial exports insert neutral omission markers at the beginning, between non-contiguous selected fragments, and at the end when appropriate. JSON records the same structure with `omittedBefore` and `omittedAfter` flags.
 
-When attachment saving is disabled, Markdown and HTML still use the same resolved attachment filenames and folder paths as a normal downloaded export; only the attachment bytes are omitted from the ZIP.
+When attachment saving is disabled, Markdown and HTML still use the resolved attachment filenames and folder paths that would be used by a normal downloaded export; only the attachment bytes are omitted from the ZIP.
+
+### Provider-specific handling
+
+Provider APIs and page structures differ, so acquisition and normalization remain provider-specific.
+
+- **ChatGPT:** conversation graph traversal, citations, uploads, generated images, sandbox artifacts, and ChatGPT file delivery.
+- **Claude:** active-branch traversal, local resources, image galleries, and MCP/custom visual widgets captured as self-contained SVG when rendered by Claude.
+- **Grok:** conversation history reconstruction, generated/search images, generated files, user assets, and Grok-specific response cards.
+- **DeepSeek:** message parent traversal, visible reasoning/THINK content, files, uploaded image previews, and external images when retrievable.
+
+See [Multi-platform architecture](.github/MULTI_PLATFORM_ARCHITECTURE.md) and [Provider internals](docs/provider-internals.md) for implementation details.
 
 ### Large archives
 
 ZIP files are assembled in memory and saved through Blob/Object URLs instead of whole-archive base64 data URLs. Chromium creates the Blob/Object URL in an MV3 offscreen document, while Firefox creates it directly in its background document.
 
-This avoids the previous whole-archive binary-string/base64/data-URL conversion, which multiplied memory usage and could terminate the browser on large image-heavy exports. Both the Chromium and Firefox paths have been live-tested with a roughly **160 MB** ZIP containing **75 attachments**.
-
-The ZIP itself is still assembled in memory, so very large exports can use several gigabytes of browser RAM while attachments are downloaded and the archive is built. Further streaming/memory optimization is possible if larger real-world exports require it.
+Both browser paths have been live-tested with a roughly **160 MB** ZIP containing **75 attachments**. The ZIP itself is still assembled in memory, so very large exports can require substantial browser RAM.
 
 ## Firefox support
 
-Firefox support uses the same export, selection, rendering, attachment and ZIP code as Chromium. Only the Manifest V3 background/download environment differs:
+Firefox support uses the same export, selection, rendering, attachment, and ZIP code as Chromium. Only the Manifest V3 background/download environment differs:
 
 - Chromium uses a background service worker plus an offscreen document for Blob/Object URL creation.
 - Firefox uses a Manifest V3 background script and creates Blob/Object URLs directly in the background document.
 
-Release packaging is automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission and Firefox-specific Gecko metadata. The Firefox package targets Firefox 140 or later.
+Release packaging is automated. `scripts/package.sh` produces two clean archives from the same source tree: a Chromium package with `background.service_worker` and `offscreen`, and a Firefox package with `background.scripts`, no `offscreen` permission, and Firefox-specific Gecko metadata. The Firefox package targets Firefox 140 or later.
 
-The Firefox package declares the data categories it must handle to retrieve and export the active conversation. Firefox presents this declaration through its built-in installation consent experience; the developer does not receive this data.
-
-Both packaged variants have been live-tested without manifest warnings. Firefox testing has covered normal export, selective-message export, attachment saving and a roughly 160 MB / 75-attachment stress test.
+The Firefox package declares the data categories it must handle to retrieve and export active conversations. Firefox presents this declaration through its built-in installation consent experience; the developer does not receive this data.
 
 ## Known limitations
 
-- The extension depends on ChatGPT's current DOM structure and undocumented internal endpoints. Changes to ChatGPT may temporarily break some functionality.
-- External web images referenced by an assistant response can remain remote links instead of being downloaded into the archive.
-- Audio transcription text shown by ChatGPT is not currently exported separately.
-- Shift-click range selection is limited to messages currently represented by the ChatGPT page DOM; full-branch selection itself is handled independently of DOM virtualization.
+- The extension depends on provider page structures and undocumented/internal endpoints. Provider changes may temporarily break some functionality.
+- Attachment and external-image support varies by provider and content type; some externally referenced images may remain remote links instead of being downloaded.
+- Shift-click range selection is limited to messages currently represented by the provider page DOM; full-branch selection is handled separately where possible.
 - Very large exports are still assembled in memory and can require substantial RAM.
 - Firefox packages from GitHub Releases are currently unsigned and therefore use Firefox's temporary add-on loading flow.
 
@@ -126,36 +139,43 @@ Both packaged variants have been live-tested without manifest warnings. Firefox 
 
 The extension runs locally in the browser.
 
-It communicates with `chatgpt.com` only to read the current conversation and download files referenced by that conversation. It does not send conversation contents to third-party servers and contains no analytics or telemetry.
+It communicates with the supported chat service and related file/content-delivery hosts only as needed to read the current conversation and retrieve content requested for export. Some externally referenced images may be requested directly from their source URL when the provider exposes them that way.
 
-Extension preferences and temporary per-session UI/cache state are stored using browser extension storage APIs. The offscreen document used by Chromium for large downloads is part of the extension and does not contact an external service.
+The extension does not send conversation contents to a developer-controlled server and contains no analytics or telemetry.
 
-See the full [Privacy Policy](PRIVACY.md) for the data-handling, retention and Chrome Web Store Limited Use disclosures.
+Extension preferences and temporary per-session UI/cache state are stored using browser extension storage APIs. The offscreen document used by Chromium for large downloads is part of the extension and does not contact an external service by itself.
+
+See the full [Privacy Policy](PRIVACY.md) for data-handling, retention, and store-disclosure details.
 
 ## Project structure
 
 ```text
 .github/workflows/package.yml  GitHub Actions packaging workflow
+.github/MULTI_PLATFORM_ARCHITECTURE.md
+                               Provider-neutral architecture notes
 _locales/                      UI translations
 icons/                         Extension icons
 scripts/package.sh             Chromium/Firefox package builder
-scripts/package-smoke.py        Release-package content and manifest smoke test
+scripts/package-smoke.py       Release-package content and manifest smoke test
 async-pool.js                  Small bounded-concurrency worker pool
-attachments.js                 Attachment discovery and normalization
+attachments.js                 Shared attachment discovery/normalization helpers
 background.js                  Export orchestration, selection cache and download lifecycle
-chatgpt-api.js                 ChatGPT session/API access and file resolution
-content.js                     Chat-page integration and message selection UI
-conversation.js                Conversation branch and message normalization
-dom-selection.js               Shared ChatGPT DOM turn/message detection helpers
+platform.js                    Provider registry and adapter selection
+chatgpt-*.js                   ChatGPT API, normalization and selection
+claude-*.js                    Claude API, normalization, selection and visual capture
+grok-*.js                      Grok API/history/normalization/selection
+deepseek-*.js                  DeepSeek API/normalization/selection
+content.js                     ChatGPT page integration and selection UI
+conversation.js                ChatGPT conversation graph normalization
 download-url.js                Cross-browser Blob/Object URL download helper
-offscreen.html                 Chromium MV3 offscreen document host
-offscreen.js                   Chromium Blob/Object URL creation for ZIP downloads
-popup.html                     Extension popup
-popup.js                       Popup behavior
+offscreen.html/js              Chromium MV3 Blob/Object URL host
+popup.html / popup.js          Extension popup
 render.js                      Markdown/HTML rendering
-selection-cache-observer.js    Lightweight page observer for selection-cache invalidation
-selection-index.js             Compact logical message-selection index
-selection-matcher.js           Shared direct/exchange/legacy selection matcher
+math-render.js                 Math rendering support
+mermaid-*.js                   Mermaid rendering support
+ordered-selection.js           Shared ordered-provider selection logic
+selection-*.js                 Shared selection helpers/cache
+vendor/                        Vendored renderer runtimes and licenses
 tests/                         Vitest unit and regression tests
 utils.js                       Shared helpers
 zip.js                         ZIP writer
@@ -174,22 +194,20 @@ And she was the first to say: “If we were writing our own exporter…”
 
 Vibe-coded with ChatGPT.
 
-Requirements, product decisions and real-world testing by the author; architecture, implementation, debugging and refactoring developed collaboratively with ChatGPT.
+Requirements, product decisions, and real-world testing by the author; architecture, implementation, debugging, and refactoring developed collaboratively with ChatGPT.
 
-The project uses plain JavaScript and Manifest V3 with no build system or runtime dependencies. Vitest is used only as a development dependency for unit and regression tests.
+The project uses plain JavaScript and Manifest V3 with no build system or runtime package dependencies. Vitest is used as a development dependency; KaTeX and Mermaid are prepared into vendored runtime files for HTML export rendering.
 
-To install the test dependency and run the suite locally:
+To install development dependencies and run the suite locally:
 
 ```bash
 npm install
 npm test
 ```
 
-The tests focus first on pure export logic: message selection, legacy image-response matching, attachment normalization, rendering and shared filename/path helpers. Pull requests run the unit suite before browser packaging, so regressions block a green packaging check.
+For local Chromium development, edit the files in the repository and click **Reload** for the extension on `chrome://extensions`. Refresh the open provider page after changes to its content scripts.
 
-For local Chromium development, edit the files in the repository and click **Reload** for the extension on `chrome://extensions`. Refresh the open ChatGPT page after changes to content scripts such as `content.js` or `selection-cache-observer.js`.
-
-Unpacked development installs expose an attachment-concurrency selector (1–10, default 3) for testing. Normal packaged/store installs hide this selector and always use 10 concurrent attachment downloads.
+Unpacked development installs expose an attachment-concurrency selector (1–10, default 3) for testing. Normal packaged/store installs hide this selector and use 10 concurrent attachment downloads.
 
 To build browser-specific archives locally on a Unix-like environment:
 
@@ -197,9 +215,9 @@ To build browser-specific archives locally on a Unix-like environment:
 bash scripts/package.sh
 ```
 
-The resulting archives are written to `dist/`. This command is for development and release packaging; end users should download the already-built browser archive from GitHub Releases.
+The resulting archives are written to `dist/`.
 
-For release packaging, pushing a tag such as `v0.1.32` runs the GitHub Actions packaging workflow. The workflow verifies that the tag matches the version in `manifest.json`, builds both browser archives and creates a **draft GitHub Release** with both ZIP files attached. The draft can then be reviewed and published manually, which keeps release immutability compatible with the packaging flow.
+For release packaging, pushing a tag such as `v0.1.38` runs the GitHub Actions packaging workflow. The workflow verifies that the tag matches the version in `manifest.json`, builds both browser archives, and creates a **draft GitHub Release** with both ZIP files attached. The draft can then be reviewed and published manually.
 
 Pull requests also run the packaging workflow as a validation check. After both browser ZIPs are built, a smoke test verifies their file allowlist and browser-specific manifest rules before the packages are exposed as a workflow artifact.
 
@@ -209,6 +227,6 @@ Licensed under the [MIT License](LICENSE).
 
 ## Disclaimer
 
-This is an independent project and is not affiliated with or endorsed by OpenAI.
+AI Chat Export is an independent project and is not affiliated with or endorsed by OpenAI, Anthropic, xAI, or DeepSeek.
 
-ChatGPT and OpenAI are trademarks of OpenAI.
+ChatGPT, Claude, Grok, DeepSeek, and the respective company names and marks belong to their owners.
