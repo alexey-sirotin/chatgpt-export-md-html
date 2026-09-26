@@ -1,6 +1,8 @@
+import { renderMermaidSourcesLocally } from "./mermaid-runtime.js";
+
 const objectUrls = new Set();
 
-navigator.serviceWorker.onmessage = event => {
+navigator.serviceWorker.onmessage = async event => {
   const message = event.data || {};
 
   if (message.type === "CREATE_OBJECT_URL") {
@@ -14,6 +16,19 @@ navigator.serviceWorker.onmessage = event => {
       const url = URL.createObjectURL(blob);
       objectUrls.add(url);
       port.postMessage({ ok: true, url });
+    } catch (e) {
+      port.postMessage({ ok: false, error: e.message || String(e) });
+    }
+    return;
+  }
+
+  if (message.type === "RENDER_MERMAID") {
+    const port = event.ports?.[0];
+    if (!port) return;
+
+    try {
+      const results = await renderMermaidSourcesLocally(message.sources || []);
+      port.postMessage({ ok: true, results });
     } catch (e) {
       port.postMessage({ ok: false, error: e.message || String(e) });
     }
