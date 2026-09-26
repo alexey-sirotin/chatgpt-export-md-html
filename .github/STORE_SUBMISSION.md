@@ -43,13 +43,13 @@ AI Chat Export is an independent open-source project and is not affiliated with 
 
 ### Short description
 
-Export chats from ChatGPT, Claude, Grok, and DeepSeek to Markdown, HTML, and JSON, with optional local attachments.
+Export chats from ChatGPT, Claude, Grok, and DeepSeek to Markdown and HTML, with optional local attachments.
 
 ### Detailed description
 
 Export the AI conversation you are viewing into a portable local archive.
 
-AI Chat Export supports ChatGPT, Claude, Grok, and DeepSeek. It can create Markdown, HTML, and JSON files independently or together and can save supported uploads, generated images, files, audio, and other attachments referenced by the conversation.
+AI Chat Export supports ChatGPT, Claude, Grok, and DeepSeek. It can create Markdown and HTML files independently or together and can save supported uploads, generated images, files, audio, and other attachments referenced by the conversation.
 
 Features include:
 
@@ -77,13 +77,13 @@ The extension depends on provider page structures and internal/undocumented endp
 
 ### Short description
 
-Экспорт чатов ChatGPT, Claude, Grok и DeepSeek в Markdown, HTML и JSON с возможностью локально сохранить вложения.
+Экспорт чатов ChatGPT, Claude, Grok и DeepSeek в Markdown и HTML с возможностью локально сохранить вложения.
 
 ### Detailed description
 
 Сохраняйте открытую AI-беседу в переносимый локальный архив.
 
-AI Chat Export поддерживает ChatGPT, Claude, Grok и DeepSeek. Расширение может независимо или одновременно создавать файлы Markdown, HTML и JSON, а также сохранять поддерживаемые загрузки пользователя, сгенерированные изображения, файлы, аудио и другие вложения беседы.
+AI Chat Export поддерживает ChatGPT, Claude, Grok и DeepSeek. Расширение может независимо или одновременно создавать файлы Markdown и HTML, а также сохранять поддерживаемые загрузки пользователя, сгенерированные изображения, файлы, аудио и другие вложения беседы.
 
 Основные возможности:
 
@@ -229,7 +229,7 @@ Basic test procedure:
 
 1. Sign in to ChatGPT, Claude, Grok, or DeepSeek and open a conversation containing at least one user message and one assistant response.
 2. Open the extension popup.
-3. Keep Markdown, HTML, and JSON enabled and click Export.
+3. Keep Markdown and HTML enabled and click Export.
 4. Confirm that a ZIP archive is downloaded and contains the selected formats.
 5. Reopen the popup, choose Select messages, clear the selection, select individual messages in the provider page, and export again.
 6. If the conversation includes supported attachments, enable Save attachments and confirm that the files are included in the ZIP.
@@ -269,9 +269,9 @@ Recommended:
 
 Use non-personal demonstration conversations created specifically for the listing.
 
-1. Popup over a supported AI conversation, showing the three export formats and attachment options.
+1. Popup over a supported AI conversation, showing the Markdown/HTML choices and attachment options.
 2. Message-selection mode with several selected and unselected messages.
-3. The downloaded archive opened to show Markdown, HTML, JSON, and an attachment folder.
+3. The downloaded archive opened to show Markdown, HTML, and an attachment folder.
 4. A rendered HTML export containing headings, code, a table, math/Mermaid, and an image.
 5. A Claude export containing a captured custom visual SVG, or long-export progress with the Cancel button visible.
 
