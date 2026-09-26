@@ -3,6 +3,7 @@ import {
   getInstallType,
   resolveAttachmentDownloadConcurrency
 } from "./runtime-mode.js";
+import { INCLUDE_DEBUG_JSON } from "./build-mode.js";
 import { platformForUrl } from "./platform.js";
 
 const $ = (id) => document.getElementById(id);
@@ -95,7 +96,7 @@ function defaultNames() {
 function setWorking(working) {
   for (const id of [
     "toggle", "all", "none", "export", "name", "userName", "assistantName",
-    "exportMarkdown", "exportHtml", "exportJson", "includeOriginalLink",
+    "exportMarkdown", "exportHtml", "includeOriginalLink",
     "saveAttachments", "separateAttachmentsFolder", "attachmentDownloadConcurrency"
   ]) {
     const el = $(id);
@@ -196,7 +197,7 @@ function syncAttachmentOptionsUi() {
 }
 
 function syncFormatOptionsUi() {
-  const anyFormat = $("exportMarkdown").checked || $("exportHtml").checked || $("exportJson").checked;
+  const anyFormat = $("exportMarkdown").checked || $("exportHtml").checked;
   $("export").disabled = !!exportStartedAt || !hasActiveConversation || !anyFormat;
 }
 
@@ -211,7 +212,6 @@ async function loadOptions() {
   const saved = await chrome.storage.local.get({
     exportMarkdown: true,
     exportHtml: true,
-    exportJson: true,
     includeOriginalLink: true,
     saveAttachments: true,
     separateAttachmentsFolder: true,
@@ -219,7 +219,6 @@ async function loadOptions() {
   });
   $("exportMarkdown").checked = saved.exportMarkdown !== false;
   $("exportHtml").checked = saved.exportHtml !== false;
-  $("exportJson").checked = saved.exportJson !== false;
   $("includeOriginalLink").checked = saved.includeOriginalLink !== false;
   $("saveAttachments").checked = saved.saveAttachments !== false;
   $("separateAttachmentsFolder").checked = saved.separateAttachmentsFolder !== false;
@@ -233,7 +232,7 @@ async function loadOptions() {
 async function saveOptions() {
   const exportMarkdown = $("exportMarkdown").checked;
   const exportHtml = $("exportHtml").checked;
-  const exportJson = $("exportJson").checked;
+  const exportJson = INCLUDE_DEBUG_JSON;
   const includeOriginalLink = $("includeOriginalLink").checked;
   const saveAttachments = $("saveAttachments").checked;
   const separateAttachmentsFolder = $("separateAttachmentsFolder").checked;
@@ -245,7 +244,6 @@ async function saveOptions() {
   await chrome.storage.local.set({
     exportMarkdown,
     exportHtml,
-    exportJson,
     includeOriginalLink,
     saveAttachments,
     separateAttachmentsFolder,
@@ -380,7 +378,7 @@ $("none").onclick = async () => {
 };
 
 $("export").onclick = async () => {
-  if (!$("exportMarkdown").checked && !$("exportHtml").checked && !$("exportJson").checked) {
+  if (!$("exportMarkdown").checked && !$("exportHtml").checked) {
     $("status").textContent = t("chooseFormat");
     return;
   }
@@ -483,7 +481,6 @@ $("userName").addEventListener("change", saveNames);
 $("assistantName").addEventListener("change", saveNames);
 $("exportMarkdown").addEventListener("change", saveOptions);
 $("exportHtml").addEventListener("change", saveOptions);
-$("exportJson").addEventListener("change", saveOptions);
 $("includeOriginalLink").addEventListener("change", saveOptions);
 $("saveAttachments").addEventListener("change", saveOptions);
 $("separateAttachmentsFolder").addEventListener("change", saveOptions);

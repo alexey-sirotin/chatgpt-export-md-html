@@ -43,6 +43,14 @@ copy_tracked_files() {
 copy_tracked_files "$CHROMIUM"
 copy_tracked_files "$FIREFOX"
 
+# Working-tree builds keep the normalized JSON export for diagnostics. Release
+# packages deliberately disable it so Markdown and HTML are the public formats.
+for target in "$CHROMIUM" "$FIREFOX"; do
+  cat > "$target/build-mode.js" <<'EOF'
+export const INCLUDE_DEBUG_JSON = false;
+EOF
+done
+
 python3 - "$CHROMIUM/manifest.json" "$FIREFOX/manifest.json" <<'PY'
 import copy
 import json
@@ -68,7 +76,7 @@ firefox['background'] = {
 }
 firefox['browser_specific_settings'] = {
     'gecko': {
-        'id': 'chatgpt-export-md-html@alexey-sirotin',
+        'id': 'ai-chat-export@alexey-sirotin',
         'strict_min_version': '140.0',
         'data_collection_permissions': {
             'required': [
@@ -91,8 +99,8 @@ PY
 # not use Chromium's offscreen page.
 rm -f "$FIREFOX/offscreen.html" "$FIREFOX/offscreen.js"
 
-CHROMIUM_ZIP="$DIST/chatgpt-export-md-html-${VERSION}-chromium.zip"
-FIREFOX_ZIP="$DIST/chatgpt-export-md-html-${VERSION}-firefox.zip"
+CHROMIUM_ZIP="$DIST/ai-chat-export-${VERSION}-chromium.zip"
+FIREFOX_ZIP="$DIST/ai-chat-export-${VERSION}-firefox.zip"
 
 (
   cd "$CHROMIUM"

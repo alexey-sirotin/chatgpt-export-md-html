@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>ChatGPT Export to Markdown &amp; HTML</title>
+  <title>AI Chat Export</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -50,7 +50,7 @@
     .names { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .names label { margin-top: 0; }
     .section-label { margin: 9px 0 3px; font-size: 12px; color: var(--muted); }
-    .formats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .formats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
     .option {
       display: flex;
       align-items: center;
@@ -107,10 +107,6 @@
     <label class="option">
       <input id="exportHtml" type="checkbox" checked>
       <span data-i18n="formatHtml"></span>
-    </label>
-    <label class="option">
-      <input id="exportJson" type="checkbox" checked>
-      <span data-i18n="formatJson"></span>
     </label>
   </div>
   <label class="option">

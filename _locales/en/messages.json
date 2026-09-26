@@ -1,9 +1,9 @@
 {
   "extensionName": {
-    "message": "ChatGPT Export to Markdown & HTML"
+    "message": "AI Chat Export"
   },
   "extensionDescription": {
-    "message": "Export the current ChatGPT branch to Markdown + HTML + JSON with local attachments."
+    "message": "Export chats from ChatGPT, Claude, Grok, and DeepSeek to Markdown + HTML with local attachments."
   },
   "exportNamePlaceholder": {
     "message": "Export name"
@@ -71,7 +71,7 @@
     "message": "Loading message list…"
   },
   "openChatHint": {
-    "message": "Open a chat on chatgpt.com or claude.ai and refresh the page."
+    "message": "Open a supported chat on ChatGPT, Claude, Grok, or DeepSeek and refresh the page."
   },
   "nothingSelected": {
     "message": "Nothing is selected. Select messages or click “All”."
@@ -206,11 +206,8 @@
   "progressWaitingDownload": {
     "message": "Waiting for the archive download to finish…"
   },
-  "formatJson": {
-    "message": "JSON"
-  },
   "defaultExportName": {
-    "message": "ChatGPT export"
+    "message": "AI chat export"
   },
   "unknownError": {
     "message": "Unknown error"
